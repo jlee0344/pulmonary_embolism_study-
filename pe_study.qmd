@@ -1,0 +1,482 @@
+
+
+```{r}
+library(readxl)
+library(dplyr)
+library(readr)
+library(tibble) 
+library(ggplot2) 
+library(knitr) 
+library(kableExtra) 
+library(tidyr)
+library(mice)
+library(naniar)
+library(randomForest)
+```
+
+#Part A: Data Wrangling and Cleaning 
+
+```{r}
+full_data <- "~/Documents/Desert Valley Research /desert_valley .xlsx"
+cases <- read_excel(full_data, sheet = 1)
+controls <- read_excel(full_data, sheet = 2)
+```
+
+Creating New Variables: 
+We created new variables: age_greater_65, systolic, diastolic, and bmi_marker from the existing variables. 
+
+```{r}
+cases$age_greater_65 <- factor(ifelse(cases$age >= 65, 1, 0))
+controls$age_greater_65 <- factor(ifelse(controls$age >= 65, 1, 0))
+```
+ 
+
+```{r}
+cases$heart_rate_geneva <- ifelse(
+  cases$heart_rate >= 95, 3,
+  ifelse(cases$heart_rate >= 75 & cases$heart_rate <= 94, 2, 1)
+)
+
+controls$heart_rate_geneva <- ifelse(
+  controls$heart_rate >= 95, 3,
+  ifelse(controls$heart_rate >= 75 & controls$heart_rate <= 94, 2, 1)
+) 
+
+bp_split_cases <- strsplit(cases$blood_pressure, "/")
+cases$systolic <- as.numeric(sapply(bp_split_cases, `[`, 1))
+cases$diastolic <- as.numeric(sapply(bp_split_cases, `[`, 2))
+
+bp_split_controls <- strsplit(controls$blood_pressure, "/")
+controls$systolic <- as.numeric(sapply(bp_split_controls, `[`, 1))
+controls$diastolic <- as.numeric(sapply(bp_split_controls, `[`, 2))
+
+cases$blood_pressure <- NULL
+controls$blood_pressure <- NULL
+```
+
+```{r}
+cases$bmi_marker <- cut(
+  cases$bmi,
+  breaks = c(-Inf, 18.5, 24.9, 29.9, 34.9, 39.9, Inf),
+  labels = c(
+    "Underweight", 
+    "Normal", 
+    "Overweight", 
+    "Obesity Class 1", 
+    "Obesity Class 2", 
+    "Obesity Class 3"
+  ),
+  right = TRUE
+)
+
+controls$bmi_marker <- cut(
+  controls$bmi,
+  breaks = c(-Inf, 18.5, 24.9, 29.9, 34.9, 39.9, Inf),
+  labels = c(
+    "Underweight", 
+    "Normal", 
+    "Overweight", 
+    "Obesity Class 1", 
+    "Obesity Class 2", 
+    "Obesity Class 3"
+  ),
+  right = TRUE
+)
+
+```
+
+Binary Refinements: For all the binary variables (factor variables), replace the value of 3 with NA and convert the factor labeling from 2 to 0.
+
+The reference for the factor variables in the dataset will have the following labeling: 1 (Yes), 0 (No), and NA (missing values). 
+
+```{r}
+clean_binary_variable <- function(df, varname) {
+  df[[varname]][df[[varname]] == 3] <- NA
+  df[[varname]] <- factor(ifelse(df[[varname]] == 2, 0, df[[varname]]))
+  return(df)
+}
+
+binary_vars <- c(
+  "gender", "smoking_history", "copd_history", "emphysema_ct", "copd_exacerbation",
+  "positive_d_dimer", "covid", "elevated_bnp", "elevated_troponin",
+  "dvt_in_lower_extremity", "rvsp_based_age", "rv_hypokines_on_echo",
+  "pulmonary_hypertension", "rh_thrombus", "rh_strain", "rv_lv_abnormality",
+  "tricuspid_regurgitation", "rv_edd_abnormality", "septal_bowing", 
+  "clinical_symptoms_dvt", "pe_more_likely", "heart_rate_100", 
+  "immobilization_surgery", "dvt_pe", "haemoptysis", "malignancy",   
+  "surgery_fracture", "active_malignancy", "unilateral_lower_limb_pain", 
+  "pain_lower_limb_edema", "acute_resp"
+)
+
+for (var in binary_vars) {
+  cases <- clean_binary_variable(cases, var)
+}
+
+for (var in binary_vars) {
+  controls <- clean_binary_variable(controls, var)
+}
+```
+
+
+2. Further Refinements: Dealing with numerical values with Limited Data: 
+d_dimer_value, bnp_levels, troponin_levels, troponin_levels_hs, and map_value. 
+
+```{r}
+numeric_vars <- c("d_dimer_value", "bnp_levels", "troponin_levels", "troponin_levels_hs") 
+
+cases[numeric_vars] <- lapply(cases[numeric_vars], parse_number)
+controls[numeric_vars] <- lapply(controls[numeric_vars], parse_number)
+```
+
+```{r}
+cases$map_value <- parse_number(trimws(cases$map_value))
+controls$map_value <- parse_number(trimws(controls$map_value))
+```
+
+Converting each Variable into Correct Form: We convert the numerical and factor variables as such: 
+
+```{r}
+convert_variables <- function(df) {
+  df <- df %>%
+    mutate(
+      pe_status = factor(pe_status), 
+      age = as.numeric(age),
+      gender = factor(gender), 
+      race = factor(race), 
+      bmi = as.numeric(bmi),
+      bmi_marker = as.factor(bmi_marker), 
+
+      smoking_history = factor(smoking_history),
+      copd_history = factor(copd_history),
+      emphysema_ct = factor(emphysema_ct),
+      copd_exacerbation = factor(copd_exacerbation), 
+      
+      positive_d_dimer = factor(positive_d_dimer),
+      d_dimer_value = as.numeric(d_dimer_value),
+      
+      covid = factor(covid),
+      elevated_bnp = factor(elevated_bnp),
+      bnp_levels = as.numeric(bnp_levels),
+      elevated_troponin = factor(elevated_troponin),
+      troponin_levels = as.numeric(troponin_levels),
+      troponin_levels_hs = as.numeric(troponin_levels_hs),
+      dvt_in_lower_extremity = factor(dvt_in_lower_extremity),
+    
+      rvsp_based_age = factor(rvsp_based_age),
+      echo_rvsp_value = as.numeric(echo_rvsp_value),
+      rv_hypokines_on_echo = factor(rv_hypokines_on_echo),
+      pulmonary_hypertension = factor(pulmonary_hypertension),
+      rh_thrombus = factor(rh_thrombus),
+      rh_strain = factor(rh_strain),
+      rv_to_lv_ratio = as.numeric(rv_to_lv_ratio),
+      rv_lv_abnormality = factor(rv_lv_abnormality),
+      
+      tricuspid_regurgitation = factor(tricuspid_regurgitation),
+      rv_edd_cm = as.numeric(rv_edd_cm),
+      rv_edd_abnormality = factor(rv_edd_abnormality),
+      septal_bowing = factor(septal_bowing),
+
+      clinical_symptoms_dvt = factor(clinical_symptoms_dvt),
+      pe_more_likely = factor(pe_more_likely),
+      heart_rate_100 = factor(heart_rate_100),
+      heart_rate = as.numeric(heart_rate),
+      immobilization_surgery = factor(immobilization_surgery),
+      dvt_pe = factor(dvt_pe),
+      haemoptysis  = factor(haemoptysis),
+      malignancy = factor(malignancy),
+
+      surgery_fracture = factor(surgery_fracture),
+      active_malignancy = factor(active_malignancy),
+      unilateral_lower_limb_pain = factor(unilateral_lower_limb_pain),
+      pain_lower_limb_edema = factor(pain_lower_limb_edema), 
+      heart_rate_geneva = factor(heart_rate_geneva),
+      
+      well_score = as.numeric(well_score), 
+      revised_geneva_score = as.numeric(revised_geneva_score), 
+      admission_year = factor(admission_year), 
+      map_value = as.numeric(map_value), 
+      acute_resp = factor(acute_resp),
+      diastolic = as.numeric(diastolic),
+      systolic = as.numeric(systolic)
+  
+    )
+  
+  return(df)
+}
+
+cases <- convert_variables(cases)
+controls <- convert_variables(controls)
+```
+
+Merging the Cases and Controls Data together: The final dataset is called "merged_dataset" and has 52 total variables with 366 rows (observations). In other words, there are 176 individuals in the case group (diagnosed with pulmonary embolism) and 190 individuals in the control group (not diagnosed with pulmonary embolims) as referenced by the pe_status where 1 = cases and 0 = controls. 
+
+```{r}
+merged_data <- bind_rows(cases, controls) 
+str(merged_data)
+```
+
+#Part B: Cleaning Data: Dealing with Missing Values 
+
+For the 52 variables presented, let us run a summary to see what percentage of the data are present in each variable: 
+
+```{r}
+missing_summary <- merged_data %>%
+  summarise(across(everything(), ~mean(is.na(.)) * 100)) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Percent_Missing") %>%
+  filter(Percent_Missing > 0) %>%
+  mutate(Category = case_when(
+    Percent_Missing < 5 ~ "<5% Missing",
+    Percent_Missing >= 5 & Percent_Missing <= 20 ~ "5–20% Missing",
+    Percent_Missing > 20 ~ ">20% Missing"
+  )) %>%
+  arrange(desc(Percent_Missing))
+
+minimal_missing <- missing_summary %>% filter(Category == "<5% Missing")
+moderate_missing <- missing_summary %>% filter(Category == "5–20% Missing")
+high_missing <- missing_summary %>% filter(Category == ">20% Missing")
+
+
+minimal_missing %>%
+  select(Variable, Percent_Missing) %>%
+  kable("html", caption = "Less than 5% Missing") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+
+moderate_missing %>%
+  select(Variable, Percent_Missing) %>%
+  kable("html", caption = "5–20% Missing") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+
+high_missing %>%
+  select(Variable, Percent_Missing) %>%
+  kable("html", caption = "Greater than 20% Missing") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+```
+
+**Handling Missingess of Variables with <5% Missing Data ** 
+
+For variables with less than 5% missingness, it is important to determine the underlying mechanism of missing data (MCAR, MAR, or NMAR) in order to select the appropriate method for handling it. Specifically, we assess whether the probability of missingness is independent of both observed and unobserved variables, which is a condition known as Missing Completely at Random (MCAR). To evaluate this, we applied Little’s MCAR test, which statistically compares means and covariances across groups defined by patterns of missing data. This test uses a chi-squared statistic to assess whether there are significant differences between groups with and without missing data.
+
+In our analysis, the test returned a χ² statistic of 21.97 with 33 degrees of freedom and a p-value of 0.928. Since this p-value is well above the standard threshold of 0.05, we fail to reject the null hypothesis, indicating no significant differences between the observed data patterns. We therefore conclude that the data for the selected variables is MCAR.
+
+```{r}
+vars_under_5 <- c("smoking_history", "emphysema_ct", "copd_history", "copd_exacerbation", 
+                  "clinical_symptoms_dvt", "immobilization_surgery", "dvt_pe", 
+                  "haemoptysis", "malignancy", "surgery_fracture", "active_malignancy", 
+                  "unilateral_lower_limb_pain", "pain_lower_limb_edema", "well_score", 
+                  "revised_geneva_score", "pe_more_likely")
+
+data_subset<- merged_data[, vars_under_5]
+mcar_test(data_subset)
+```
+
+Because the missingness is determined to be completely at random (MCAR) and affects less than 5% of the data for each variable, we can apply either simple imputation or complete case analysis without introducing bias. We began by performing complete case analysis, removing all rows with missing values for the selected variables. This resulted in the exclusion of 9 rows, accounting for only 2.46% of the entire dataset. Such minimal data loss is unlikely to affect statistical power or validity, especially since 97.5% of the original sample is retained. 
+
+```{r}
+n_complete <- sum(complete.cases(data_subset))
+n_total <- nrow(data_subset)
+n_dropped <- n_total - n_complete
+
+cat("Number of rows that would be dropped:", n_dropped, "\n")
+cat("Percentage of data dropped:", round((n_dropped / n_total) * 100, 2), "%\n")
+```
+
+To ensure the robustness of our approach, we conducted a sensitivity analysis by comparing results from complete case analysis to those obtained using simple imputation. In the imputation method, missing values for categorical variables were replaced with the mode of each respective variable, while missing values for numerical variables were substituted with their corresponding mean. Logistic regression models were then fit on both the complete case and imputed datasets, and their AIC values were compared. The model based on complete case analysis yielded an AIC of 348.99, whereas the model based on the imputed dataset had an AIC of 353.70, suggesting that the complete case model provided a slightly better fit. Based on this comparison, we finalized our dataset using the complete case approach, resulting in the removal of 9 rows and retaining a total of 357 observations.
+
+```{r}
+data_complete_case <- na.omit(data_subset) 
+get_mode <- function(x) {
+  ux <- unique(x[!is.na(x)])
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+data_imputed <- data_subset %>%
+  mutate(across(where(is.numeric), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .))) %>%
+  mutate(across(where(is.factor), ~ ifelse(is.na(.), get_mode(.), .)))
+
+data_complete_case$pe_status <- merged_data$pe_status[complete.cases(data_subset)]
+data_imputed$pe_status <- merged_data$pe_status
+
+model_cc <- glm(pe_status ~ ., data = data_complete_case, family = binomial)
+model_imp <- glm(pe_status ~ ., data = data_imputed, family = binomial)
+
+aic_values <- data.frame(
+  Method = c("Complete Case Analysis", "Simple Imputation"),
+  AIC = c(AIC(model_cc), AIC(model_imp))
+)
+
+aic_values %>%
+  kable("html", caption = "Comparison of AIC Values: Complete Case vs Imputation") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+
+merged_data <- merged_data[complete.cases(merged_data[, vars_under_5]), ]
+
+```
+
+
+**Handling Missingess of Vairables with 5-20 percent missingness ** 
+
+The only variable that has a missingness of between 5-20 percent is the variable "elevated_troponin" at 7.28 percent missingness. We first assess whether the missingess of elevated_troponing may be associated with the outcome variable (pe_status) by calculating the propotion of positive pulmonary embolsim cases among those with and without missing elevated_troponing values. We are able to observe that among with observed troponing results, the rate of pulmonary embolsim is 48.6 percent while among those with missing troponin, the pulmonary embolism rate is around 34.6 percent. The signifiant difference in the pulmonary embmolism rate between these two groups suggest that the missingness of the troponing variable is not completely at random (MCAR) and is possible related to the outcome variable, pe_status, which is an observed variable, corresponding to the possibility that the missingness in elevated_troponin is likely MAR (Missing at Rnadom) which indicates that the probabiltiy of missingess depends only on observed data and not on the missing value itself. In other words, patients with missing elevated_troponing values are less likely to have pulmonary embolsim. 
+
+```{r}
+merged_data %>%
+  mutate(pe_status_num = as.numeric(as.character(pe_status)),
+         troponin_missing = ifelse(is.na(elevated_troponin), "Missing", "Not Missing")) %>%
+  group_by(troponin_missing) %>%
+  summarise(pe_rate = mean(pe_status_num, na.rm = TRUE),
+            n = n()) %>%
+  kable("html", caption = "Pulmonary Embolism Rate by Elevated Troponin Missingness") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+```
+
+Given that the variable elevated_troponin has a missingness rate of 7.28%, and that this missingness appears to be Missing at Random (MAR) rather than Completely at Random (MCAR), we used multiple imputation rather than complete case analysis. A complete case approach would result in the exclusion of 26 observations, which could reduce statistical power and introduce bias, especially if the missingness is related to the outcome variable, PE status. In order to handle the missing values in elevated_troponin, we applied Multiple Imputation by Chained Equations (MICE) using logistic regression imputation. The imputation model included the outcome variable pe_status and additional covariates to preserve the variability and account for potential relationships between elevated_troponin and other predictors. To determine which covariates to include, we fit a Random Forest classifier to the observed data and ranked predictors by their MeanDecreaseAccuracy. From the set of variables with less than 20% missingness, we selected the top four strongest predictors: acute_resp, map_value, bmi, and heart_rate which were based on variable importance, along with age, pe_status (the outcome variable), and clinical_symptoms_dvt (the most informative symptom-related marker). These covariates, together with elevated_troponin, were included in the MICE procedure with 5 imputed datasets and 10 iterations, using the first completed dataset to impute the missing values.
+
+```{r}
+missing_prop <- colMeans(is.na(merged_data))
+vars_under_20 <- names(missing_prop[missing_prop < 0.20]) 
+```
+
+```{r}
+vars_under_20 <- c(
+  "pe_status", "age", "gender", "race", "bmi", "smoking_history", "copd_history", 
+  "emphysema_ct", "copd_exacerbation", "clinical_symptoms_dvt", "pe_more_likely", 
+  "heart_rate", "heart_rate_100", "immobilization_surgery", "dvt_pe", "haemoptysis", 
+  "malignancy", "surgery_fracture", "active_malignancy", "unilateral_lower_limb_pain", 
+  "pain_lower_limb_edema", "well_score", "revised_geneva_score", "admission_year", 
+  "map_value", "acute_resp", "age_greater_65", "heart_rate_geneva", 
+  "systolic", "diastolic", "bmi_marker"
+)
+
+formula_str <- paste("elevated_troponin ~", paste(vars_under_20, collapse = " + "))
+rf_formula <- as.formula(formula_str)
+
+rf_data <- merged_data %>% filter(!is.na(elevated_troponin))
+
+set.seed(123)
+rf_model <- randomForest(
+  formula = rf_formula,
+  data = rf_data,
+  importance = TRUE, 
+  ntree = 500
+)
+
+var_importance <- importance(rf_model, type = 1) 
+top_vars <- rownames(var_importance)[order(-var_importance[, 1])][1:30]
+
+importance_df <- as.data.frame(importance(rf_model))
+importance_df$Variable <- rownames(importance_df)
+
+top10_vars <- importance_df %>%
+  arrange(desc(MeanDecreaseAccuracy)) %>%
+  select(Variable, MeanDecreaseAccuracy) %>%
+  slice(1:30)
+
+top10_vars %>%
+  kable("html", caption = "Top 10 Predictors of Elevated Troponin (by Mean Decrease Accuracy)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+```{r}
+impute_vars <- c("pe_status", "elevated_troponin", "acute_resp", "map_value", "bmi", "heart_rate", "age", "clinical_symptoms_dvt")
+impute_data <- merged_data[, impute_vars]
+```
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+capture.output({
+  imputed_data <- mice(
+    impute_data,
+    m = 5,
+    method = "logreg",
+    maxit = 10,
+    seed = 123
+  )
+}, file = NULL)
+```
+```{r}
+model_vars <- c("elevated_troponin", "pe_status", "acute_resp", "map_value", 
+                "bmi", "heart_rate", "age", "clinical_symptoms_dvt")
+cc_data <- merged_data %>% 
+  select(all_of(model_vars)) %>% 
+  drop_na()
+```
+
+```{r}
+complete_data <- complete(imputed_data, 1)
+merged_data$elevated_troponin <- complete_data$elevated_troponin
+```
+
+Sensitibity Analysis: 
+
+```{r}
+
+
+imp_data <- complete_data %>% 
+  select(all_of(model_vars))
+```
+
+```{r}
+model_cc <- glm(pe_status ~ ., data = cc_data, family = binomial)
+model_imp <- glm(pe_status ~ ., data = imp_data, family = binomial)
+```
+
+```{r}
+aic_comparison <- tibble(
+  Model = c("Complete Case", "Imputed"),
+  AIC = c(AIC(model_cc), AIC(model_imp))
+)
+library(kableExtra)
+aic_comparison %>%
+  kable("html", caption = "AIC Comparison Between Complete Case and Imputed Models") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+```
+
+
+**Handling Missiginess of Variables with more than 20 percent missingness ** 
+
+```{r}
+
+```
+
+#Part C: Descriptive Statistics (Univariate): Identifying Potential Outliers/Uncaptured Missing Values (No Stratification) 
+
+**1. Categorical Variables ** 
+
+Statistical Summaries (Counts, Frequencies, and Percentages) 
+
+Visualizations: Bar Graphs, Pie Charts 
+
+```{r}
+
+```
+
+
+**2. Continuous Variables (Numerical):** 
+
+Statistical Summaries 
+
+Visaulizations 
+
+Identifying Outliers 
+
+
+
+#Part D: Stratified Analysis (Bivariate): Stratify individuals by the presence of Pulmonary Embolism 
+
+
+
+
+
+
+#Part E: Multivariate Analysis (Logistic Regression) 
+
+First Research Question: 
+
+
+
+
+
+
+
+
+
+
+
