@@ -14,7 +14,8 @@ library(naniar)
 library(randomForest)
 ```
 
-# Part A: Data Wrangling and Cleaning (Construction of Dataset: merged_data)
+# Part A: Data Wrangling
+**Construction of the merged_data Dataset ** 
 
 ```{r}
 full_data <- "~/Documents/Desert Valley Research /desert_valley.xlsx"
@@ -22,7 +23,8 @@ cases <- read_excel(full_data, sheet = 1)
 controls <- read_excel(full_data, sheet = 2)
 ```
 
-Creating New Variables: We created new variables: systolic, diastolic, and bmi_marker from the existing variables. 
+
+**New Variables: ** Three new variables were derived to enhance interpretability: systolic, diastolic, and bmi_marker. The systolic and diastolic variables were extracted by decomposing the original blood_pressure variable, which contained combined systolic/diastolic readings. Additionally, bmi_marker was created by categorizing the continuous bmi variable into six clinically meaningful BMI categories. 
 
 ```{r}
 cases$heart_rate_geneva <- ifelse(
@@ -77,9 +79,25 @@ controls$bmi_marker <- cut(
 )
 ```
 
-Binary Refinements: For all the binary variables (factor variables), replace the value of 3 with NA and convert the factor labeling from 2 to 0.
+```{r}
+cases$age_group <- cut(
+  cases$age,
+  breaks = c(18, 30, 40, 50, 60, 70, 80, 100),
+  labels = c("19–30", "31–40", "41–50", "51–60", "61–70", "71–80", "81+"),
+  right = TRUE,
+  include.lowest = TRUE
+)
 
-The reference for the factor variables in the dataset will have the following labeling: 1 (Yes), 0 (No), and NA (missing values). 
+controls$age_group <- cut(
+  controls$age,
+  breaks = c(18, 30, 40, 50, 60, 70, 80, 100),
+  labels = c("19–30", "31–40", "41–50", "51–60", "61–70", "71–80", "81+"),
+  right = TRUE,
+  include.lowest = TRUE
+)
+```
+
+**Handling Labeling for Binary Variables: ** For all binary (two-level factor) variables in the original dataset, data entries were standardized for consistency. Values coded as “3” were recoded as NA to indicate missingness, while values coded as “2” were recoded as 0. As a result, all binary variables follow a unified labeling convention: 1 = Yes, 0 = No, and NA = Missing.
 
 ```{r}
 clean_binary_variable <- function(df, varname) {
@@ -110,8 +128,7 @@ for (var in binary_vars) {
 ```
 
 
-2. Further Refinements: Dealing with numerical values with Limited Data: 
-d_dimer_value, bnp_levels, troponin_levels, troponin_levels_hs, and map_value. 
+**Handling Numerical Variables with Limited or Censored Data: ** Variables such as d_dimer_value, bnp_levels, troponin_levels, troponin_levels_hs, and map_value contained values reported with inequality signs (ex: “<0.015”). To standardize these entries for quantitative analysis, we parsed and retained only the numeric portion—interpreting values like “<0.015” as 0.015. 
 
 ```{r}
 numeric_vars <- c("d_dimer_value", "bnp_levels", "troponin_levels", "troponin_levels_hs") 
@@ -125,7 +142,7 @@ cases$map_value <- parse_number(trimws(cases$map_value))
 controls$map_value <- parse_number(trimws(controls$map_value))
 ```
 
-Converting each Variable into Correct Form: We convert the numerical and factor variables as such: 
+**Variable Type Conversion:** Each variable was converted to its appropriate data type to ensure accurate analysis. Continuous variables were retained or converted as numeric types, while categorical variables, particularly binary indicators, were converted into factors with consistent labeling (0 = No, 1 = Yes). 
 
 ```{r}
 convert_variables <- function(df) {
@@ -189,7 +206,8 @@ convert_variables <- function(df) {
       map_value = as.numeric(map_value), 
       acute_resp = factor(acute_resp),
       diastolic = as.numeric(diastolic),
-      systolic = as.numeric(systolic)
+      systolic = as.numeric(systolic), 
+      age_group = as.factor(age_group)
   
     )
   
@@ -200,26 +218,13 @@ cases <- convert_variables(cases)
 controls <- convert_variables(controls)
 ```
 
-Merging the Cases and Controls Data together: The final dataset is called "merged_dataset" and has 50 total variables with 366 rows (observations). In other words, there are 176 individuals in the case group (diagnosed with pulmonary embolism) and 190 individuals in the control group (not diagnosed with pulmonary embolims) as referenced by the pe_status where 1 = cases and 0 = controls. 
+
+**Merging the Cases and Controls Data: ** The final analytic dataset, named merged_data, comprises 366 observations across 50 variables. This dataset integrates individuals from both the case and control groups: 176 individuals diagnosed with pulmonary embolism (PE) and 190 individuals without PE. The outcome variable, pe_status, indicates case-control status, where a value of 1 denotes a case (PE present) and 0 denotes a control (PE absent).
 
 ```{r}
 merged_data <- bind_rows(cases, controls) 
 merged_data <- merged_data %>%
   select(-c(troponin_levels, troponin_levels_hs))
-```
-
-Creating new variable: age_factor: 
-
-```{r}
-merged_data$age_group <- cut(
-  merged_data$age,
-  breaks = c(18, 30, 40, 50, 60, 70, 80, 100),
-  labels = c("19–30", "31–40", "41–50", "51–60", "61–70", "71–80", "81+"),
-  right = TRUE,
-  include.lowest = TRUE
-)
-
-merged_data$age_group <- as.factor(merged_data$age_group)
 ```
 
 ```{r}
@@ -333,7 +338,7 @@ aic_values %>%
 merged_data <- merged_data[complete.cases(merged_data[, vars_under_5]), ]
 ```
 
-**Handling Missingess of Variables with 5-20 percent missingness ** REDOOO
+**Handling Missingess of Variables with 5-20 percent missingness ** 
 
 The only variable with moderate missingness (between 5–20%) is elevated_troponin, with 7.28% of values missing. To assess the nature of this missingness, we examine whether it is associated with the outcome variable, pe_status (pulmonary Embolism diagnosis).
 
@@ -372,7 +377,9 @@ chisq.test(table(is.na(merged_data$elevated_troponin), merged_data$pe_status))
 mcar_test(merged_data[,c("elevated_troponin","pe_status")]) 
 ```
 
-These findings suggest that the missingness in elevated_troponin is not systematically related to observed data, and thus can be considered MCAR. However, it is reasonable to proceed under the MAR (Missing At Random) framework for multiple imputation rather than complete case analysis. A complete case approach would result in the exclusion of 26 observations, which could reduce statistical power and introduce bias, especially if the missingness is related to the outcome variable, PE status. In order to handle the missing values in elevated_troponin, we applied Multiple Imputation by Chained Equations (MICE) using logistic regression imputation. The imputation model included the outcome variable pe_status and additional covariates to preserve the variability and account for potential relationships between elevated_troponin and other predictors. To identify relevant covariates for imputation, we trained a Random Forest classifier on the observed data and ranked the predictors based on their Mean Decrease in Accuracy (a measure of variable importance.) From variables with less than 20% missingness, we selected the top four predictors: acute_resp, map_value, bmi, and heart_rate. These were chosen based on their predictive strength. Additionally, we included age and pe_status (the outcome variable), clinical_symptoms_dvt (the most informative symptom-related feature), and systolic and diastolic blood pressure readings, as they are clinically relevant due to their association with elevated troponin and potential cardiac injury.These covariates, together with elevated_troponin, were included in the MICE procedure with 5 imputed datasets and 10 iterations, using the first completed dataset to impute the missing values.
+These findings suggest that the missingness in elevated_troponin is not systematically related to observed data, and thus can be considered MCAR. However, it is reasonable to proceed under the MAR (Missing At Random) framework for multiple imputation rather than complete case analysis. A complete case approach would result in the exclusion of 26 observations, which could reduce statistical power and introduce bias, especially if the missingness is related to the outcome variable, PE status. In order to handle the missing values in elevated_troponin, we applied Multiple Imputation by Chained Equations (MICE) using logistic regression imputation. 
+
+The imputation model included the outcome variable pe_status and additional covariates to preserve the variability and account for potential relationships between elevated_troponin and other predictors. To identify relevant covariates for imputation, we trained a Random Forest classifier on the observed data and ranked the predictors based on their Mean Decrease in Accuracy (a measure of variable importance.) From variables with less than 20% missingness, we selected the top four predictors: acute_resp, map_value, bmi, and heart_rate. These were chosen based on their predictive strength. Additionally, we included age and pe_status (the outcome variable), clinical_symptoms_dvt (the most informative symptom-related feature), and systolic and diastolic blood pressure readings, as they are clinically relevant due to their association with elevated troponin and potential cardiac injury. These covariates, together with elevated_troponin, were included in the MICE procedure with 5 imputed datasets and 10 iterations, using the first completed dataset to impute the missing values.
 
 ```{r}
 missing_prop <- colMeans(is.na(merged_data))
@@ -380,17 +387,10 @@ vars_under_20 <- names(missing_prop[missing_prop < 0.20])
 ```
 
 ```{r}
-vars_under_20 <- c(
-  "pe_status", "age", "gender", "race", "bmi", "smoking_history", "copd_history", 
-  "emphysema_ct", "copd_exacerbation", "clinical_symptoms_dvt", "pe_more_likely", 
-  "heart_rate", "heart_rate_100", "immobilization_surgery", "dvt_pe", "haemoptysis", 
-  "malignancy", "surgery_fracture", "active_malignancy", "unilateral_lower_limb_pain", 
-  "pain_lower_limb_edema", "well_score", "revised_geneva_score", "admission_year", 
-  "map_value", "acute_resp", "heart_rate_geneva", 
-  "systolic", "diastolic", "bmi_marker", "age_group"
+formula_str <- paste(
+  "elevated_troponin ~", 
+  paste(vars_under_20[vars_under_20 != "elevated_troponin"], collapse = " + ")
 )
-
-formula_str <- paste("elevated_troponin ~", paste(vars_under_20, collapse = " + "))
 rf_formula <- as.formula(formula_str)
 
 rf_data <- merged_data %>% filter(!is.na(elevated_troponin))
@@ -404,7 +404,7 @@ rf_model <- randomForest(
 )
 
 var_importance <- importance(rf_model, type = 1) 
-top_vars <- rownames(var_importance)[order(-var_importance[, 1])][1:30]
+top_vars <- rownames(var_importance)[order(-var_importance[, 1])][1:10]
 
 importance_df <- as.data.frame(importance(rf_model))
 importance_df$Variable <- rownames(importance_df)
@@ -412,7 +412,7 @@ importance_df$Variable <- rownames(importance_df)
 top10_vars <- importance_df %>%
   arrange(desc(MeanDecreaseAccuracy)) %>%
   select(Variable, MeanDecreaseAccuracy) %>%
-  slice(1:30)
+  slice(1:10)
 
 top10_vars %>%
   kable("html", caption = "Top 10 Predictors of Elevated Troponin (by Mean Decrease Accuracy)") %>%
@@ -420,7 +420,7 @@ top10_vars %>%
 ```
 
 ```{r}
-impute_vars <- c("pe_status", "elevated_troponin", "age", "map_value", "bmi", "acute_resp", "heart_rate", "clinical_symptoms_dvt", "systolic", "diastolic")
+impute_vars <- c("pe_status", "elevated_troponin", "age", "bmi", "acute_resp", "map_value", "heart_rate")
 impute_data <- merged_data[, impute_vars]
 ```
 
@@ -440,9 +440,59 @@ capture.output({
 complete_data <- complete(imputed_data, 1)
 merged_data$elevated_troponin <- complete_data$elevated_troponin
 ```
-Sensitivity Analysis to Justify Multiple Imputation: 
 
 ```{r}
+pre_imputation_data <- merged_data %>%
+  filter(!is.na(impute_data$elevated_troponin)) 
+```
+
+Sensitivity Analysis to Justify Multiple Imputation of elevated_troponin: The bar plot comparing observed and imputed values of elevated_troponin indicates that the proportions of levels (0 vs. 1) are reasonably consistent across both groups. This further suggests that the imputation preserved the original distribution of the data. 
+
+To assess whether imputation influenced model results, we fit two logistic regression models: one using the complete-case data (before imputation) and another using the full dataset after imputing missing elevated_troponin values. Both models included the same set of relevant predictors used in the imputation model. The results show that the interpretation of the model remains consistent before and after imputation: The elevated_troponin variable is not a statistically significant predictor of pulmonary embolism in either model. In addition, the coefficient for elevated_troponin_1 changed insignificantly after imputation (-0.064 to -0.102) which indicates that the imputation of values did not significantly change the variable's relationship with the outcome variable, pe_status. The variables acute_resp and clinical_symptoms_dvt are statistically significant in both models. Other covariates remain non-significant, reinforcing the stability of model estimates. This supports the conclusion that multiple imputation did not introduce bias or meaningfully alter the relationships among variables. This validates the appropriateness of the imputation procedure.
+
+```{r}
+merged_data %>%
+  mutate(trop_flag = ifelse(is.na(impute_data$elevated_troponin), "Imputed", "Observed")) %>%
+  group_by(trop_flag, elevated_troponin) %>%
+  summarise(n = n()) %>%
+  mutate(prop = n / sum(n)) %>%
+  ggplot(aes(x = elevated_troponin, y = prop, fill = trop_flag)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Proportion of Elevated Troponin (Observed vs Imputed)",
+       x = "Elevated Troponin", y = "Proportion") +
+  theme_minimal()
+```
+
+```{r}
+impute_vars <- c("elevated_troponin", "age", "map_value", "bmi", "acute_resp", 
+                 "heart_rate")
+
+logit_formula <- as.formula(paste("pe_status ~", paste(impute_vars, collapse = " + ")))
+
+model_complete <- glm(logit_formula,
+                      data = pre_imputation_data,
+                      family = binomial)
+
+model_imputed <- glm(logit_formula,
+                     data = merged_data,
+                     family = binomial)
+
+summary_complete <- summary(model_complete)
+summary_imputed <- summary(model_imputed)
+
+logit_table <- data.frame(
+  Coef_Complete = round(summary_complete$coefficients[, "Estimate"], 3),
+  P_Complete = round(summary_complete$coefficients[, "Pr(>|z|)"], 3),
+  Coef_Imputed = round(summary_imputed$coefficients[, "Estimate"], 3),
+  P_Imputed = round(summary_imputed$coefficients[, "Pr(>|z|)"], 3)
+)
+
+
+logit_table_sorted <- logit_table[order(logit_table$P_Imputed), ]
+
+logit_table_sorted %>%
+  kable("html", caption = "Logistic Regression Comparison Between Pre and Post Imputated Data") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
 
 ```
 
@@ -458,10 +508,6 @@ The variables with more than 80 percent missingness include: rv_to_lv_ratio, rv_
 merged_data <- merged_data %>%
   select(-c(rv_to_lv_ratio, rv_lv_abnormality, rv_edd_cm, rv_edd_abnormality))
 ```
-
-**Variables: troponin_levels_hs and troponing_levels ** 
-
-The variables troponing_levels_hs and troponin_levels can be merged together by standardizing the values in troponin_levels_hs into the conventional measurements under troponin_levels by dividing the original values by 1000. 
 
 **Variables: echo_rvsp_value and rvsp_based_age ** 
 
@@ -520,10 +566,6 @@ In real-world clinical studies, simple and multiple imputation become unreliable
 
 To address this, we will explore whether alternative markers of right ventricular strain can be used to complete the analysis. For instance, an echocardiogram is often used to estimate right ventricular systolic pressure (RVSP), which helps assess pulmonary hypertension which is another variable available in our dataset. However, even if the missingness in echo_rvsp_value is MAR (missingness depends on observed covariates), applying multiple imputation methods such as MICE on variables with over 50% missing data risks allowing the imputed values to dominate the dataset, potentially undermining the validity of the results. Therefore, we will exclude both echo_rvsp_value and its derived categorical/factor variable, rvsp_based_age, from the final analysis. 
 
-```{r}
-merged_data <- merged_data %>%
-  select(-c(echo_rvsp_value, rvsp_based_age))
-```
 
 **Variables: bnp_levels and elevated_bnp ** 
 
@@ -673,13 +715,28 @@ ggplot(imputed_df, aes(x = bnp_levels, fill = imputed_flag)) +
 ```
 
 
-```{r}
-
-```
+**Variables: covid ** 
 
 
+**Variables: dvt_in_lower_extremity ** 
 
-#Part C: Descriptive Statistics (Univariate): Identifying Potential Outliers/Uncaptured Missing Values (No Stratification) 
+**Variable: tricuspid_regurgitation ** 
+
+**Variable: septal_bowing** 
+
+**Variable: rh_strain ** 
+
+**Variable: pulmonary_hypertension ** 
+
+**Variable: rh_thrombus ** 
+
+**Variable: rv_hypokines_on_echo **
+
+
+
+
+
+# Part C: Descriptive Statistics (Univariate): Identifying Potential Outliers/Uncaptured Missing Values (No Stratification) 
 
 **1. Categorical Variables ** 
 
