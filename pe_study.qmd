@@ -17,7 +17,7 @@ library(randomForest)
 #Part A: Data Wrangling and Cleaning 
 
 ```{r}
-full_data <- "~/Documents/Desert Valley Research /desert_valley .xlsx"
+full_data <- "~/Documents/Desert Valley Research /desert_valley.xlsx"
 cases <- read_excel(full_data, sheet = 1)
 controls <- read_excel(full_data, sheet = 2)
 ```
@@ -256,7 +256,7 @@ high_missing %>%
 
 For variables with less than 5% missingness, it is important to determine the underlying mechanism of missing data (MCAR, MAR, or NMAR) in order to select the appropriate method for handling it. Specifically, we assess whether the probability of missingness is independent of both observed and unobserved variables, which is a condition known as Missing Completely at Random (MCAR). To evaluate this, we applied Little’s MCAR test, which statistically compares means and covariances across groups defined by patterns of missing data. This test uses a chi-squared statistic to assess whether there are significant differences between groups with and without missing data.
 
-In our analysis, the test returned a χ² statistic of 21.97 with 33 degrees of freedom and a p-value of 0.928. Since this p-value is well above the standard threshold of 0.05, we fail to reject the null hypothesis, indicating no significant differences between the observed data patterns. We therefore conclude that the data for the selected variables is MCAR.
+In our analysis, the test returned a χ² statistic of 21.97 with 33 degrees of freedom and a p-value of 0.928. Since this p-value is well above the standard threshold of 0.05, we fail to reject the null hypothesis, indicating no significant differences between the observed data patterns. We therefore conclude that the data for the selected variables is MCAR. Furthermore, the Fisher’s Exact Test further confirms that there is no significant association between missingness in the subset of predictor variables and the outcome variable, pe_status, as indicated by a large p-value of 0.3221. This supports the conclusion that the missingness in this subset is independent of PE diagnosis and is therefore likely Missing Completely at Random (MCAR).
 
 ```{r}
 vars_under_5 <- c("smoking_history", "emphysema_ct", "copd_history", "copd_exacerbation", 
@@ -267,6 +267,17 @@ vars_under_5 <- c("smoking_history", "emphysema_ct", "copd_history", "copd_exace
 
 data_subset<- merged_data[, vars_under_5]
 mcar_test(data_subset)
+```
+
+
+```{r}
+merged_data$any_missing_subset <- apply(is.na(data_subset), 1, any)
+fisher.test(table(merged_data$any_missing_subset, merged_data$pe_status))
+```
+
+```{r}
+merged_data <- merged_data %>%
+  select(-c(any_missing_subset))
 ```
 
 Because the missingness is determined to be completely at random (MCAR) and affects less than 5% of the data for each variable, we can apply either simple imputation or complete case analysis without introducing bias. We began by performing complete case analysis, removing all rows with missing values for the selected variables. This resulted in the exclusion of 9 rows, accounting for only 2.46% of the entire dataset. Such minimal data loss is unlikely to affect statistical power or validity, especially since 97.5% of the original sample is retained. 
@@ -280,7 +291,7 @@ cat("Number of rows that would be dropped:", n_dropped, "\n")
 cat("Percentage of data dropped:", round((n_dropped / n_total) * 100, 2), "%\n")
 ```
 
-To ensure the robustness of our approach, we conducted a sensitivity analysis by comparing results from complete case analysis to those obtained using simple imputation. In the imputation method, missing values for categorical variables were replaced with the mode of each respective variable, while missing values for numerical variables were substituted with their corresponding mean. Logistic regression models were then fit on both the complete case and imputed datasets, and their AIC values were compared. The model based on complete case analysis yielded an AIC of 348.99, whereas the model based on the imputed dataset had an AIC of 353.70, suggesting that the complete case model provided a slightly better fit. Based on this comparison, we finalized our dataset using the complete case approach, resulting in the removal of 9 rows and retaining a total of 357 observations.
+To ensure the robustness of our approach, we conducted a sensitivity analysis by comparing results from complete case analysis to those obtained using simple imputation. In the imputation method, missing values for categorical variables were replaced with the mode of each respective variable, while missing values for numerical variables were substituted with their corresponding mean. Logistic regression models were then fit on both the complete case and imputed datasets, and their AIC values were compared. The model based on complete case analysis yielded an AIC of 348.99, whereas the model based on the imputed dataset had an AIC of 353.70, suggesting that the complete case model provided a slightly better fit on the data that predicts the outcome variable, pe_status. Based on this comparison, we finalized our dataset using the complete case approach, resulting in the removal of 9 rows and retaining a total of 357 observations.
 
 ```{r}
 data_complete_case <- na.omit(data_subset) 
@@ -309,11 +320,10 @@ aic_values %>%
   kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
 
 merged_data <- merged_data[complete.cases(merged_data[, vars_under_5]), ]
-
 ```
 
 
-**Handling Missingess of Vairables with 5-20 percent missingness ** 
+**Handling Missingess of Vairables with 5-20 percent missingness ** MAYBE REDO 
 
 The only variable that has a missingness of between 5-20 percent is the variable "elevated_troponin" at 7.28 percent missingness. We first assess whether the missingess of elevated_troponing may be associated with the outcome variable (pe_status) by calculating the propotion of positive pulmonary embolsim cases among those with and without missing elevated_troponing values. We are able to observe that among with observed troponing results, the rate of pulmonary embolsim is 48.6 percent while among those with missing troponin, the pulmonary embolism rate is around 34.6 percent. The signifiant difference in the pulmonary embmolism rate between these two groups suggest that the missingness of the troponing variable is not completely at random (MCAR) and is possible related to the outcome variable, pe_status, which is an observed variable, corresponding to the possibility that the missingness in elevated_troponin is likely MAR (Missing at Rnadom) which indicates that the probabiltiy of missingess depends only on observed data and not on the missing value itself. In other words, patients with missing elevated_troponing values are less likely to have pulmonary embolsim. 
 
@@ -376,7 +386,7 @@ top10_vars %>%
 ```
 
 ```{r}
-impute_vars <- c("pe_status", "elevated_troponin", "acute_resp", "map_value", "bmi", "heart_rate", "age", "clinical_symptoms_dvt")
+impute_vars <- c("pe_status", "elevated_troponin", "age", "map_value", "bmi", "acute_resp", "heart_rate", "clinical_symptoms_dvt")
 impute_data <- merged_data[, impute_vars]
 ```
 
@@ -391,50 +401,228 @@ capture.output({
   )
 }, file = NULL)
 ```
-```{r}
-model_vars <- c("elevated_troponin", "pe_status", "acute_resp", "map_value", 
-                "bmi", "heart_rate", "age", "clinical_symptoms_dvt")
-cc_data <- merged_data %>% 
-  select(all_of(model_vars)) %>% 
-  drop_na()
-```
 
 ```{r}
 complete_data <- complete(imputed_data, 1)
 merged_data$elevated_troponin <- complete_data$elevated_troponin
 ```
 
-Sensitibity Analysis: 
+**Handling Missingness of Variables with more than 20 percent missingness ** 
 
 ```{r}
+high_missing
+```
+
+The variables with more than 80 percent missingness include: rv_to_lv_ratio, rv_lv_abnormality, rv_edd_cm, and rv_edd_abnormality. The best approach to handle such variables is to remove them from the dataset. Both simple and multiple imputation methods are highly unreliable to deal with such a large proportion of missingness and might create biased results. After removing these variables, we end up with 48 remaining variables. 
+
+```{r}
+merged_data <- merged_data %>%
+  select(-c(rv_to_lv_ratio, rv_lv_abnormality, rv_edd_cm, rv_edd_abnormality))
+```
+
+**Variables: troponing_levels_hs and troponing_levels ** 
+
+The variables troponing_levels_hs and troponin_levels can be merged together by standardizing the values in troponin_levels_hs into the conventional measurements under troponin_levels by dividing the original values by 1000. 
 
 
-imp_data <- complete_data %>% 
-  select(all_of(model_vars))
+**Variables: echo_rvsp_value and rvsp_based_age ** 
+
+Based on the cross-tabulation output, we observe that among individuals diagnosed with pulmonary embolism (PE), 82 had observed values for echo_rvsp_value (Echocardiographic RVSP Right Ventricular Systoic Pressure data), while 88 had missing entries (48 percent missing). In contrast, among those not diagnosed with PE, only 57 had observed values, and 130 had missing values (70 percent missing). This indicates that missingness in echo_rvsp_value is more prevalent among individuals without PE. The unequal distribution of missing values between the PE and non-PE groups suggests that the missingness is not completely at random (not MCAR), and may be associated with PE status. 
+
+```{r}
+echo_pe_table <- table(is.na(merged_data$echo_rvsp_value), merged_data$pe_status)
+echo_pe_df <- as.data.frame.matrix(echo_pe_table)
+rownames(echo_pe_df) <- c("Observed (Not Missing)", "Missing")
+echo_pe_df <- tibble::rownames_to_column(echo_pe_df, var = "Echo RVSP Missingness")
+colnames(echo_pe_df)[2:3] <- c("PE Absent (0)", "PE Present (1)")
+echo_pe_df %>%
+  kable("html", caption = "Cross-tabulation of Echo RVSP Missingness by PE Status") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+Furthermore, the chi-square test of independence yielded a small p-value (0.0008771), indicating a significant association between missingness in echo_rvsp_value and the outcome variable, pe_status. This further supports the conclusion that missingness in this variable is not completely at random (not MCAR). The Little's MCAR test also showcases a small p-value, confirming that missingess is not MCAR and that the chi-square test results are valid. 
+
+```{r}
+chisq.test(table(is.na(merged_data$echo_rvsp_value), merged_data$pe_status))
+mcar_test(merged_data[,c("echo_rvsp_value","pe_status")]) 
+```
+
+To investigate the missingness mechanism of the echo_rvsp_value variable, we conducted a logistic regression analysis to determine whether the probability of missingness is associated with other observed variables. We first created a binary indicator variable, missing_echo_rvsp_value, where 1 indicates a missing value and 0 indicates an observed one. To avoid introducing bias or excessive row deletion—since the glm() function automatically excludes rows with any missing values—we restricted our analysis to a subset of variables that have no missing data. The resulting logistic regression model revealed that the variable pe_status was a significant predictor of missingness, suggesting that the missingness in echo_rvsp_value is not completely at random (MCAR) and is more likely Missing at Random (MAR), as it appears to depend on observed data.
+
+```{r}
+merged_data$missing_echo_rvsp_value <- as.numeric(is.na(merged_data$echo_rvsp_value))
+```
+
+```{r}
+no_missing_vars <- names(merged_data)[colSums(is.na(merged_data)) == 0]
+merged_data_no_missing <- merged_data[, no_missing_vars]
+```
+
+```{r}
+excluded_vars <- c("echo_rvsp_value", "missing_echo_rvsp_value")
+predictor_vars <- setdiff(names(merged_data_no_missing), excluded_vars)
+
+formula_str <- paste("missing_echo_rvsp_value ~", paste(predictor_vars, collapse = " + "))
+formula <- as.formula(formula_str)
+
+missingness_model <- glm(formula, data = merged_data_no_missing, family = binomial)
+
+significant_vars <- tidy(missingness_model) %>%
+  filter(term != "(Intercept)", p.value < 0.1) %>%
+  arrange(p.value)
+
+significant_vars %>%
+  mutate(p.value = signif(p.value, 3)) %>%
+  kable("html", caption = "Significant Predictors of Missingness in echo_rvsp_value (p < 0.1)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+
+In real-world clinical studies, simple and multiple imputation become unreliable when more than 50% of a variable’s data is missing, especially if the missingness is not completely random. As shown above, a greater proportion of patients with missing echo_rvsp_value were not diagnosed with pulmonary embolism, suggesting that the missingness may depend on unobserved factors—such as clinicians selectively ordering echocardiograms based on PE status. This implies that the missingness in the echocardiographic RVSP data is likely not MCAR and possibly not even MAR.
+
+To address this, we will explore whether alternative markers of right ventricular strain can be used to complete the analysis. For instance, an echocardiogram is often used to estimate right ventricular systolic pressure (RVSP), which helps assess pulmonary hypertension which is another variable available in our dataset. However, even if the missingness in echo_rvsp_value is MAR (missingness depends on observed covariates), applying multiple imputation methods such as MICE on variables with over 50% missing data risks allowing the imputed values to dominate the dataset, potentially undermining the validity of the results. Therefore, we will exclude both echo_rvsp_value and its derived categorical/factor variable, rvsp_based_age, from the final analysis. There are 46 remaining variables in the dataset. 
+
+```{r}
+merged_data <- merged_data %>%
+  select(-c(echo_rvsp_value, rvsp_based_age, missing_echo_rvsp_value))
+```
+
+**Variables: bnp_levels and elevated_bnp ** 
+
+Based on the cross-tabulation output, among individuals diagnosed with pulmonary embolism (PE), 134 had observed values for bnp_levels (a numerical measure of B-type natriuretic peptide), while 53 had missing entries. Similarly, among individuals without PE, 123 had observed values and 47 had missing values. The comparable distribution of missingness between the PE and non-PE groups suggests that the missing values in bnp_levels are not systematically related to PE status. This pattern supports the assumption that the missingness may be Missing Completely at Random (MCAR).
+
+```{r}
+bnp_pe_table <- table(is.na(merged_data$bnp_levels), merged_data$pe_status)
+bnp_pe_df <- as.data.frame.matrix(bnp_pe_table)
+rownames(bnp_pe_df) <- c("Observed (Not Missing)", "Missing")
+bnp_pe_df <- tibble::rownames_to_column(bnp_pe_df, var = "BNP Levels Missingness")
+colnames(bnp_pe_df)[2:3] <- c("PE Absent (0)", "PE Present (1)")
+bnp_pe_df %>%
+  kable("html", caption = "Cross-tabulation of BNP Levels Missingness by PE Status") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+Furthermore, the chi-square test of independence yielded a small p-value (0.9776), indicating a nonsignificant association between missingness in bnp_levels and the outcome variable, pe_status. This further supports the conclusion that missingness in this variable is completely at random (MCAR). The Little's MCAR test also showcases a large p-value (p-value = 0.8838519), confirming that missingess is MCAR and that the chi-square test results are valid.
+
+```{r}
+chisq.test(table(is.na(merged_data$bnp_levels), merged_data$pe_status))
+mcar_test(merged_data[,c("bnp_levels","pe_status")]) 
+```
+
+Logistic Regression: To investigate the missingness mechanism of the bnp_levels variable, we conducted a logistic regression analysis to assess whether the probability of missingness was associated with other observed variables. We first created a binary indicator variable, missing_bnp_levels, where 1 indicates a missing value and 0 indicates an observed one. To avoid introducing bias or excessive row deletion during logistic regression, we restricted the analysis to a subset of variables with no missing data. The logistic regression results indicated that pe_status was not a significant predictor of missingness. However, variables such as age and admission_year2020 weakly predicted missingness in bnp_levels. This suggests that while the missingness may appear close to Missing Completely at Random (MCAR), there is some dependence on observed variables, making the missingness mechanism more aligned with Missing at Random (MAR). Therefore, we proceed with multiple imputation rather than complete case analysis to retain statistical power and reduce bias.
+
+```{r}
+merged_data$missing_bnp_levels<- as.numeric(is.na(merged_data$bnp_levels))
+```
+
+```{r}
+no_missing_vars <- names(merged_data)[colSums(is.na(merged_data)) == 0]
+merged_data_no_missing <- merged_data[, no_missing_vars]
+```
+
+```{r}
+excluded_vars <- c("bnp_levels", "missing_bnp_levels", "elevated_bnp")
+predictor_vars <- setdiff(names(merged_data_no_missing), excluded_vars)
+
+formula_str <- paste("missing_bnp_levels ~", paste(predictor_vars, collapse = " + "))
+formula <- as.formula(formula_str)
+
+missingness_model <- glm(formula, data = merged_data_no_missing, family = binomial)
+
+significant_vars <- tidy(missingness_model) %>%
+  filter(term != "(Intercept)", p.value < 0.1) %>%
+  arrange(p.value)
+
+significant_vars %>%
+  mutate(p.value = signif(p.value, 3)) %>%
+  kable("html", caption = "Significant Predictors of Missingness in bnp_levels (p < 0.1)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+
+```{r}
+merged_data <- merged_data %>%
+  select(-c(missing_bnp_levels))
+```
+
+MICE imputaiton method for bnp_levels: 
+
+```{r}
+imputation_predictors <- c(
+  "age",                
+  "admission_year", 
+  "bmi_marker",      
+  "copd_history",
+  "pe_status",          
+  "well_score"
+)
+
+imputation_vars <- c("bnp_levels", imputation_predictors)
+subset_data <- merged_data[, imputation_vars]
+
+pred_matrix <- quickpred(subset_data, 
+                         include = c("age", "admission_year", 
+                                     "bmi_marker", "copd_history"),
+                         exclude = "pe_status") 
+
+imp_data <- mice(subset_data,
+                 method = "pmm",
+                 predictorMatrix = pred_matrix,
+                 m = 5,
+                 maxit = 10,
+                 seed = 123)
+```
+
+Recreating the variable: elevaed_bnp from the imputed bnp_levels because the elevated-bnp variable is a binary variable with a value of 1 if bnp_levels is greater than 100 pg/mL and a value of 0 if bnp_levels is less than 100 pg/mL. 
+
+```{r}
+model_vars <- c("bnp_levels", "age", "admission_year", "bmi_marker", 
+                "copd_history", "pe_status", "well_score")
+
+cc_data <- merged_data %>%
+  select(all_of(model_vars)) %>%
+  drop_na()
+```
+
+```{r}
+imputed_df <- complete(imp_data, 1)
+imputed_df <- imputed_df[, model_vars]
 ```
 
 ```{r}
 model_cc <- glm(pe_status ~ ., data = cc_data, family = binomial)
-model_imp <- glm(pe_status ~ ., data = imp_data, family = binomial)
-```
-
-```{r}
-aic_comparison <- tibble(
-  Model = c("Complete Case", "Imputed"),
+model_imp <- glm(pe_status ~ ., data = imputed_df, family = binomial)
+aic_comparison <- data.frame(
+  Method = c("Complete Case Analysis", "MICE Imputation"),
   AIC = c(AIC(model_cc), AIC(model_imp))
 )
+
 library(kableExtra)
 aic_comparison %>%
-  kable("html", caption = "AIC Comparison Between Complete Case and Imputed Models") %>%
-  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+  kable("html", caption = "Comparison of AIC: Complete Case vs MICE Imputation") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+
 ```
 
 
-**Handling Missiginess of Variables with more than 20 percent missingness ** 
+
+Validating the Imputation versus Complete Case Analysis: 
+
+
+
+
+```{r}
+high_missing
+```
+
+
+**Variables: posiive_d_dimer and d_dimer_value **
 
 ```{r}
 
 ```
+
+
 
 #Part C: Descriptive Statistics (Univariate): Identifying Potential Outliers/Uncaptured Missing Values (No Stratification) 
 
@@ -458,10 +646,7 @@ Visaulizations
 Identifying Outliers 
 
 
-
 #Part D: Stratified Analysis (Bivariate): Stratify individuals by the presence of Pulmonary Embolism 
-
-
 
 
 
@@ -469,6 +654,7 @@ Identifying Outliers
 #Part E: Multivariate Analysis (Logistic Regression) 
 
 First Research Question: 
+
 
 
 
