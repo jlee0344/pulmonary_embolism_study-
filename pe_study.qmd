@@ -1,8 +1,33 @@
 
+---
+title: "Statistical Analysis: A Retrospective Study: Inclusion of Risk factors in Scoring System to detect pre-test probability in patients diagnosed with Acute Pulmonary Embolism"
 
+subtitle: Author: Julie Lee 
+subtitle: Advisors: : Girdhar Sahil MD, Baveja Swati 
 
+date: today
+format:
+  html:
+    theme: cosmo
+    embed-resources: true
+    number-sections: true
+    toc: true
+    toc-depth: 4
+    toc-location: left
+    code-fold: false
+engine: knitr
+knitr:
+  opts_chunk: 
+    fig.align: 'center'
+    # fig.width: 6
+    # fig.height: 4
+    message: FALSE
+    cache: false
+---
 
-
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = FALSE)
+```
 
 ```{r}
 library(readxl)
@@ -427,6 +452,81 @@ top10_vars %>%
 
 From the specified list, all combinations of 3 to 6 predictors are iteratively evaluated to identify the optimal set for imputing missing values in the elevated_troponin variable using logistic regression via the mice package. For each combination, the script conducts multiple imputation, compares the proportions of observed versus imputed values, and fits logistic regression models before and after imputation to assess the effect on pe_status. A composite score is calculated for each set, with lower scores indicating better performance which reflects  minimal differences in class proportions, regression coefficients for elevated_troponin, and associated p-values between the complete-case and imputed models.
 
+
+```{r}
+top_predictors <- c("bmi", "acute_resp", "bmi_marker", "map_value", "heart_rate", 
+                    "well_score", "heart_rate_100", "diastolic", 
+                    "unilateral_lower_limb_pain", "active_malignancy")
+
+outcome <- "elevated_troponin"
+
+evaluate_combo <- function(predictors) {
+  impute_vars <- c(outcome, "pe_status", predictors)
+  impute_data <- merged_data[, impute_vars]
+
+  imp <- tryCatch({
+    mice(impute_data, method = "logreg", m = 5, maxit = 10, seed = 123, print = FALSE)
+  }, error = function(e) return(NULL))
+  if (is.null(imp)) return(NULL)
+
+  complete_data <- complete(imp, 1)
+  temp_data <- merged_data
+  temp_data$imputed_tr <- complete_data[[outcome]]
+
+  mask_obs <- !is.na(impute_data[[outcome]])
+  observed <- temp_data[mask_obs, outcome, drop = TRUE]
+  imputed <- temp_data[!mask_obs, "imputed_tr", drop = TRUE]
+
+  prop_obs_1 <- mean(observed == 1, na.rm = TRUE)
+  prop_obs_0 <- mean(observed == 0, na.rm = TRUE)
+  prop_imp_1 <- mean(imputed == 1, na.rm = TRUE)
+  prop_imp_0 <- mean(imputed == 0, na.rm = TRUE)
+
+  prop_diff_1 <- abs(prop_obs_1 - prop_imp_1)
+  prop_diff_0 <- abs(prop_obs_0 - prop_imp_0)
+
+  model_complete <- tryCatch({
+    glm(pe_status ~ get(outcome),
+        data = temp_data[mask_obs, ],
+        family = binomial)
+  }, error = function(e) return(NULL))
+
+  model_imputed <- tryCatch({
+    glm(pe_status ~ imputed_tr,
+        data = temp_data,
+        family = binomial)
+  }, error = function(e) return(NULL))
+
+  if (is.null(model_complete) || is.null(model_imputed)) return(NULL)
+
+  coef_complete <- tryCatch(coef(model_complete)[2], error = function(e) NA)
+  coef_imputed <- tryCatch(coef(model_imputed)[2], error = function(e) NA)
+  pval_complete <- tryCatch(summary(model_complete)$coefficients[2, 4], error = function(e) NA)
+  pval_imputed <- tryCatch(summary(model_imputed)$coefficients[2, 4], error = function(e) NA)
+
+  coef_diff <- abs(coef_complete - coef_imputed)
+  pval_diff <- abs(pval_complete - pval_imputed)
+
+  score <- prop_diff_1 + prop_diff_0 + coef_diff + pval_diff
+
+  return(tibble(
+    predictors = paste(predictors, collapse = ", "),
+    prop_diff_1 = round(prop_diff_1, 3),
+    prop_diff_0 = round(prop_diff_0, 3),
+    coef_diff = round(coef_diff, 3),
+    pval_diff = round(pval_diff, 3),
+    score = round(score, 3)
+  ))
+}
+
+combinations <- unlist(lapply(3:6, function(n) combn(top_predictors, n, simplify = FALSE)), recursive = FALSE)
+safe_results <- map(combinations, safely(evaluate_combo))
+successful_results <- keep(safe_results, ~ is.null(.x$error))
+results <- map_dfr(successful_results, ~ as_tibble(.x$result)) %>%
+  arrange(score)
+
+print(head(results, 10))
+```
 
 
 ```{r}
@@ -1877,27 +1977,22 @@ logit_table_sorted %>%
 
 
 
-
-
-
-
-
-
 **Variable: rv_hypokines_on_echo** 
 
-The variable "rv_hypokines_on_echo" has 39.89 percent of its data missing. To assess the nature of this missingness, we examine whether it is associated with the outcome variable, pe_status. A cross-tabulation shows that among individuals diagnosed with PE, 98 had observed rv_hypokines_on_echo values while 89 had missing values. Among those without PE, 116 had observed values and 54 had missing values. The significant difference in proportions of missingness in both groups suggest that the absence of data is systematically linked to PE status, supporting the assumption that the data may not be Missing Completely At Random (MCAR). We also examined the PE rate within each group. Among those with observed rh_thrombus values, the PE rate is 54.2 percent, whereas it is 37.76 percent among those with missing rv_hypokines_on_echo values. 
+The variable "rv_hypokines_on_echo" has 39.89 percent of its data missing. To assess the nature of this missingness, we examine whether it is associated with the outcome variable, pe_status. A cross-tabulation shows that among individuals diagnosed with PE, 97 had observed rv_hypokines_on_echo values while 90 had missing values. Among those without PE, 117 had observed values and 53 had missing values. The significant difference in proportions of missingness in both groups suggest that the absence of data is systematically linked to PE status, supporting the assumption that the data may not be Missing Completely At Random (MCAR). We also examined the PE rate within each group. Among those with observed rv_hypokines_on_echo values, the PE rate is 54.67 percent, whereas it is 37.06 percent among those with missing rv_hypokines_on_echo values. 
 
 ```{r}
 rv_hypokines_on_echo_pe_table <- table(is.na(merged_data$rv_hypokines_on_echo), merged_data$pe_status)
 rv_hypokines_on_echo_pe_df <- as.data.frame.matrix(rv_hypokines_on_echo_pe_table)
 rownames(rv_hypokines_on_echo_pe_df) <- c("Observed (Not Missing)", "Missing")
-rv_hypokines_on_echo_pe_df <- tibble::rownames_to_column(rv_hypokines_on_echo_pe_df, var = "Right Heart Thrombus Missingness")
+rv_hypokines_on_echo_pe_df <- tibble::rownames_to_column(rv_hypokines_on_echo_pe_df, var = "Right Ventricular Hypokinesis Missingness")
 colnames(rv_hypokines_on_echo_pe_df)[2:3] <- c("PE Absent (0)", "PE Present (1)")
 
 rv_hypokines_on_echo_pe_df %>%
-  kable("html", caption = "Cross-tabulation of Right Hand Thrombus Missingness by PE Status") %>%
+  kable("html", caption = "Cross-tabulation of Right Ventricular Hypokinesis Missingness by PE Status") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
 ```
+
 
 ```{r}
 merged_data %>%
@@ -1906,7 +2001,7 @@ merged_data %>%
   group_by(rv_hypokines_on_echo_missing) %>%
   summarise(pe_rate = mean(pe_status_num, na.rm = TRUE),
             n = n()) %>%
-  kable("html", caption = "Right Hand Thrombus Rate by Pulmonary Hypertension") %>%
+  kable("html", caption = "Pulmonary Embolism Rate by Right Ventricular Hypokinesis") %>%
   kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
 ```
 
@@ -1927,7 +2022,7 @@ formula_str <- paste(
 )
 rf_formula <- as.formula(formula_str)
 
-rf_data <- merged_data %>% filter(!is.na(rh_thrombus))
+rf_data <- merged_data %>% filter(!is.na(rv_hypokines_on_echo))
 
 set.seed(123)
 rf_model <- randomForest(
@@ -1949,14 +2044,15 @@ top10_vars <- importance_df %>%
   slice(1:10)
 
 top10_vars %>%
-  kable("html", caption = "Top 10 Predictors of Right Hand Thrombus (by Mean Decrease Accuracy)") %>%
+  kable("html", caption = "Top 10 Predictors of Right Ventricular Hypokinesis (by Mean Decrease Accuracy)") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
 ```
 
 The same iterative imputation procedure is applied to the variable rv_hypokines_on_echo to find the optimal set for imputing missing values. The code is essentially the same as iterative imputation performed for previous variables above. Additionally, we included pe_status (the outcome variable). These covariates, together with rv_hypokines_on_echo were included in the MICE procedure with 5 imputed datasets and 10 iterations, using the first completed dataset to impute the missing values. Code is not included as it is the same as the one from variables above. 
 
+
 ```{r}
-impute_vars <- c("pe_status", "rh_thrombus", "dvt_pe", "revised_geneva_score", "elevated_bnp") 
+impute_vars <- c("pe_status", "rv_hypokines_on_echo", "map_value", "rh_strain", "elevated_bnp")
 impute_data <- merged_data[, impute_vars]
 ```
 
@@ -1983,7 +2079,7 @@ merged_data$rv_hypokines_on_echo[is.na(merged_data$rv_hypokines_on_echo)] <-
   completed_data$rv_hypokines_on_echo[is.na(merged_data$rv_hypokines_on_echo)]
 ```
 
-Sensitivity Analysis to Justify Multiple Imputation of rv_hypokines_on_echo: The bar plot comparing observed and imputed values of rh_strain indicates that the proportions of levels (0 vs. 1) are reasonably consistent across both groups. This further suggests that the imputation preserved the original distribution of the data. 
+Sensitivity Analysis to Justify Multiple Imputation of rv_hypokines_on_echo: The bar plot comparing observed and imputed values of rv_hypokines_on_echo indicates that the proportions of levels (0 vs. 1) are reasonably consistent across both groups. This further suggests that the imputation preserved the original distribution of the data. 
 
 ```{r}
 merged_data %>%
@@ -1994,15 +2090,15 @@ merged_data %>%
   mutate(prop = n / sum(n)) %>%
   ggplot(aes(x = factor(rv_hypokines_on_echo), y = prop, fill = rv_hypokines_on_echo_flag)) +
   geom_bar(stat = "identity", position = "dodge") +
-  labs(title = "Proportion of Right Hand Thrombus (Observed vs Imputed)",
+  labs(title = "Proportion ofRight Ventricular Hypokinesis (Observed vs Imputed)",
        x = "rh_thrombus", y = "Proportion") +
   theme_minimal()
 ```
 
-To assess whether imputation influenced model results, we fit two logistic regression models: one using the complete-case data (before imputation) and another using the full dataset after imputing missing rh_thrombus values. The results show that the interpretation of the model remains consistent before and after imputation: The rv_hypokines_on_echo variable is not statistically significant predictor of pulmonary embolism in either model at a alpha value of 0.10. In addition, the coefficient for rv_hypokines_on_echo changed insignificantly after imputation (-14.652 to -15.281) which indicates that the imputation of values did not significantly change the variable's relationship with the outcome variable, pe_status. This validates the appropriateness of the imputation procedure.
+To assess whether imputation influenced model results, we fit two logistic regression models: one using the complete-case data (before imputation) and another using the full dataset after imputing missing rv_hypokines_on_echo values. The results show that the interpretation of the model remains consistent before and after imputation: The rv_hypokines_on_echo variable is statistically significant predictor of pulmonary embolism in either model at a alpha value of 0.05. In addition, the coefficient for rv_hypokines_on_echo changed insignificantly after imputation (-1.185 to -0.986) which indicates that the imputation of values did not significantly change the variable's relationship with the outcome variable, pe_status. This validates the appropriateness of the imputation procedure.
 
 ```{r}
-impute_vars <- c("rh_thrombus", "dvt_pe", "revised_geneva_score", "elevated_bnp") 
+impute_vars <- c( "rv_hypokines_on_echo", "map_value", "rh_strain", "elevated_bnp")
 logit_formula <- as.formula(paste("pe_status ~", paste(impute_vars, collapse = " + ")))
 
 model_complete <- glm(logit_formula,
@@ -2032,14 +2128,198 @@ logit_table_sorted %>%
 ```
 
 
+**Variables: echo_rvsp_value and rvsp_based_age ** 
+
+Based on the cross-tabulation output, we observe that among individuals diagnosed with pulmonary embolism (PE), 82 had observed values for echo_rvsp_value (Echocardiographic RVSP Right Ventricular Systoic Pressure data), while 88 had missing entries (48 percent missing). In contrast, among those not diagnosed with PE, only 57 had observed values, and 130 had missing values (70 percent missing). This indicates that missingness in echo_rvsp_value is more prevalent among individuals without PE. The unequal distribution of missing values between the PE and non-PE groups suggests that the missingness is not completely at random (not MCAR), and may be associated with PE status. 
+
+```{r}
+echo_pe_table <- table(is.na(merged_data$echo_rvsp_value), merged_data$pe_status)
+echo_pe_df <- as.data.frame.matrix(echo_pe_table)
+rownames(echo_pe_df) <- c("Observed (Not Missing)", "Missing")
+echo_pe_df <- tibble::rownames_to_column(echo_pe_df, var = "Echo RVSP Missingness")
+colnames(echo_pe_df)[2:3] <- c("PE Absent (0)", "PE Present (1)")
+echo_pe_df %>%
+  kable("html", caption = "Cross-tabulation of Echo RVSP Missingness by PE Status") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+
+Furthermore, the chi-square test of independence yielded a small p-value (0.0008771), indicating a significant association between missingness in echo_rvsp_value and the outcome variable, pe_status. This further supports the conclusion that missingness in this variable is not completely at random (not MCAR). The Little's MCAR test also showcases a small p-value, confirming that missingess is not MCAR and that the chi-square test results are valid. 
+
+```{r}
+chisq.test(table(is.na(merged_data$echo_rvsp_value), merged_data$pe_status))
+mcar_test(merged_data[,c("echo_rvsp_value","pe_status")]) 
+```
+
+To investigate the missingness mechanism of the echo_rvsp_value variable, we conducted a logistic regression analysis to determine whether the probability of missingness is associated with other observed variables. We first created a binary indicator variable, missing_echo_rvsp_value, where 1 indicates a missing value and 0 indicates an observed one. To avoid introducing bias or excessive row deletion (the glm() function automatically excludes rows with any missing values), we restricted our analysis to a subset of variables that have no missing data. The resulting logistic regression model revealed that the variable pe_status was a significant predictor of missingness, suggesting that the missingness in echo_rvsp_value is not completely at random (MCAR) and is more likely Missing at Random (MAR), as it appears to depend on observed data. Therefore, we proceed with multiple imputation rather than complete case analysis to retain statistical power and reduce bias.
+
+```{r}
+merged_data$missing_echo_rvsp_value <- as.numeric(is.na(merged_data$echo_rvsp_value))
+```
+
+```{r}
+no_missing_vars <- names(merged_data)[colSums(is.na(merged_data)) == 0]
+merged_data_no_missing <- merged_data[, no_missing_vars]
+```
+
+```{r}
+excluded_vars <- c("echo_rvsp_value", "missing_echo_rvsp_value", "rvsp_based_age")
+predictor_vars <- setdiff(names(merged_data_no_missing), excluded_vars)
+
+formula_str <- paste("missing_echo_rvsp_value ~", paste(predictor_vars, collapse = " + "))
+formula <- as.formula(formula_str)
+
+missingness_model <- glm(formula, data = merged_data_no_missing, family = binomial)
+
+significant_vars <- tidy(missingness_model) %>%
+  filter(term != "(Intercept)", p.value < 0.1) %>%
+  arrange(p.value)
+
+significant_vars %>%
+  mutate(p.value = signif(p.value, 3)) %>%
+  kable("html", caption = "Significant Predictors of Missingness in echo_rvsp_value") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = FALSE)
+```
+
+
+Imputation for echo_rvsp_value: Missing values in this variable were imputed using Predictive Mean Matching (PMM) via the MICE algorithm. The predictor variables used in the imputation include both: (1) variables most strongly associated with missingness in echo_rvsp_value with a p-value of less than 0.10 (as detailed in the table above), and (2) clinically relevant predictors known to be associated with both the outcome variable pe_status and with RVSP (Right Ventricular Systolic Pressure) which is a measurement that estimates the pressure in the right ventricle of the heart. All these variables have no missing values. 
+
+To address the skewed distribution of RVSP, values for echo_rvsp_value were log-transformed using log1p() prior to imputation. PMM was then applied over 20 imputed datasets and 50 iterations. After imputation, the values were back-transformed to their original scale using expm1(). Finally, the binary variable rvsp_based_age was derived from the imputed echo_rvsp_value, coded as 1 for values greater than 40 mmHg, and 0 otherwise.
+
+```{r}
+mandatory_predictors <- c(
+  "acute_resp", "haemoptysis", "immobilization_surgery", "pe_status", "admission_year"
+)
+clinical_predictors <- c(
+  "heart_rate", "diastolic", "systolic")
+  
+  impute_predictors <- c(mandatory_predictors, clinical_predictors)
+```
+
+```{r}
+merged_data$log_rvsp <- log1p(merged_data$echo_rvsp_value)
+impute_data <- merged_data[, c("log_rvsp", impute_predictors)]
+```
+
+```{r}
+pred_matrix <- make.predictorMatrix(impute_data)
+pred_matrix[,] <- 0  
+pred_matrix["log_rvsp", impute_predictors] <- 1
+```
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+capture.output(
+  imp <- mice(impute_data,
+              method = "pmm", 
+              predictorMatrix = pred_matrix,
+              m = 20, 
+              maxit = 50,
+              seed = 123),
+  file = NULL
+)
+```
+
+```{r}
+log_rvsp<- complete(imp, 1)$log_rvsp
+merged_data$echo_rvsp_value <- expm1(log_rvsp)
+
+merged_data$echo_rvsp_value <- as.numeric(merged_data$echo_rvsp_value)
+merged_data$rvsp_based_age <- factor(
+  ifelse(merged_data$echo_rvsp_value > 40, 1, 0),
+  levels = c(0, 1)
+)
+```
+
+Validating Imputation of echo_rvsp_value and rvsp_based_age: The summary table presents descriptive statistics for echo_rvsp_value by imputed_flag. The observed and imputed groups show similar central tendencies, with mean values of 39.87 (observed) and 38.52 (imputed), and median values of 36. Additionally, results from the Welch two-sample t-test and Wilcoxon rank-sum test yield p-values greater than 0.05, indicating no statistically significant difference in the means or distributions of echo_rvsp-value between the observed and imputed groups. This conclusion is further supported by the density plot, which shows substantial overlap between the two distributions and no notable shift post-imputation. Taken together, these findings confirm that the imputation of echo_rvsp_value was successful and did not introduce meaningful bias.
+
+```{r}
+imputed_df <- complete(imp, 1)
+imputed_df$imputed_flag <- ifelse(is.na(merged_data$log_rvsp), "Imputed", "Observed")
+
+imputed_df$echo_rvsp_value<- expm1(imputed_df$log_rvsp)
+
+summary_table <- imputed_df %>%
+  mutate(imputed_flag = factor(imputed_flag, levels = c("Observed", "Imputed"))) %>%
+  group_by(imputed_flag) %>%
+  summarise(
+    Mean = round(mean(echo_rvsp_value, na.rm = TRUE), 2),
+    Median = round(median(echo_rvsp_value, na.rm = TRUE), 2),
+    SD = round(sd(echo_rvsp_value, na.rm = TRUE), 2),
+    N = n(),
+    .groups = 'drop'
+  )
+
+summary_table %>%
+  kable("html", caption = "Summary of RVSP Levels by Imputation Status") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+
+```{r}
+t.test(echo_rvsp_value ~ imputed_flag, data = imputed_df)
+```
+
+
+```{r}
+wilcox.test(echo_rvsp_value ~ imputed_flag, data = imputed_df)
+```
+
+```{r}
+ggplot(imputed_df, aes(x = echo_rvsp_value, fill = imputed_flag)) +
+  geom_density(alpha = 0.4) +
+  labs(
+    title = "Distribution of Observed vs. Imputed RVSP Levels",
+    x = "RVSP Levels",
+    y = "Density",
+    fill = "Value Type"
+  ) +
+  theme_minimal()
+
+merged_data <- merged_data %>% select(-log_rvsp)
+merged_data <- merged_data %>% select(-missing_echo_rvsp_value) 
+```
+
+
+**Finalized Data Set ** 
+
+After dealing with missing values present in various variables in the merged_data dataset, the finalized data set that will be used for analysis is as follows. There are 357 total observations (rows) and 47 columns (variables) in the final dataset. 
+
+```{r}
+head(merged_data) 
+str(merged_data) 
+dim(merged_data)
+```
+
+# Part C: Descriptive Statistics (Univariate): Identifying Potential Outliers/Uncaptured Missing Values (No Stratification) 
+
+**1. Categorical Variables ** 
+
+Statistical Summaries (Counts, Frequencies, and Percentages) 
+
+Visualizations: Bar Graphs, Pie Charts 
+
+```{r}
+
+```
+
+
+**2. Continuous Variables (Numerical):** 
+
+Statistical Summaries 
+
+Visaulizations 
+
+Identifying Outliers 
+
+
+#Part D: Stratified Analysis (Bivariate): Stratify individuals by the presence of Pulmonary Embolism 
 
 
 
 
+#Part E: Multivariate Analysis (Logistic Regression): First Research Question 
 
-
-
-
+First Research Question: 
 
 
 
