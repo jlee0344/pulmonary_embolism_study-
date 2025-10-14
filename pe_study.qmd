@@ -2569,7 +2569,7 @@ merged_data_no_2019 <- merged_data %>%
 
 ### Statistical Summaries 
 
-The following tables display the frequency and percentage distributions for each level of the categorical variables in the finalized data set. 
+The following tables display the frequency and percentage distributions for each level of the categorical variables in the finalized data set. There are a total of 33 categorical variables - 29 binary variables and 4 multi-level categorical variables. 
 
 ```{r categorical_summaries, results='asis'}
 summarize_categorical <- function(data, var_name) {
@@ -2619,7 +2619,6 @@ for (var in categorical_vars) {
 cat('</div>\n')
 ```
 
-
 ### Visualizations: Bar Graphs, Pie Charts 
 
 The bar graphs for all the binary categorical variables are shown below. The information regarding each level of the variables are indicated as: 
@@ -2628,31 +2627,31 @@ The bar graphs for all the binary categorical variables are shown below. The inf
 2. `smoking_history`: Patient has history of smoking - Yes: 1 and No: 0 
 3. `copd_history`: History of Chronic Obstructive Pulmonary Disease - Yes = 1, No = 0 
 4. `emphysema_ct`: CT scan shows emphysema - Yes = 1, No = 0
-5. `copd_exacerbation`: ** Worsening of COPD symptoms lasting more than a few days - Yes = 1, No = 0 
-6. `positive_d_dimer`: ** >0.5 µg/mL; indicates blood clot breakdown - Yes = 1, No = 0 
+5. `copd_exacerbation`: Worsening of COPD symptoms lasting more than a few days - Yes = 1, No = 0 
+6. `positive_d_dimer`: >0.5 µg/mL; indicates blood clot breakdown - Yes = 1, No = 0 
 7. `covid`: Presence of COVID-19 infection - Yes = 1, No = 0
 8. `elevated_bnp`: Brain Natriuretic Peptide >0.5 µg/mL - Yes = 1, No = 0 
 9. `elevated_troponin`: Troponin > 0.045 µg/mL - Yes = 1, No = 0
 10. `dvt_in_lower_extremity`: Blood clot in a deep vein, typically in the lower leg - Yes = 1, No = 0
 11. `clinical_symptoms_dvt`: Presence of DVT symptoms in the legs - Yes = 1, No = 0
 12. `pe_more_likely`: Pulmonary embolism is more likely than other diagnoses - Yes = 1, No = 0
-13. `heart_rate_100` Heart rate greater than 100 bpm - Yes = 1, No = 0
+13. `heart_rate_100`: Heart rate greater than 100 bpm - Yes = 1, No = 0
 14. `immobilization_surgery`: Immobilization >3 days or surgery in the past 4 weeks - Yes = 1, No = 0
-15. `**Dvt PE: **` Previous deep venous thrombosis or pulmonary embolism - Yes = 1, No = 0
-16. **Haemoptysis: ** Coughing up blood or blood-stained mucus - Yes = 1, No = 0
-17. **Malignancy: ** Presence of a malignant tumor - Yes = 1, No = 0
-18. **Surgery Fracture: ** Surgery under general anesthesia or limb fracture within the last month - Yes = 1, No = 0
+15. `dvt_pe`: Previous deep venous thrombosis or pulmonary embolism - Yes = 1, No = 0
+16. `haemoptysis`: Coughing up blood or blood-stained mucus - Yes = 1, No = 0
+17. `malignancy`: Presence of a malignant tumor - Yes = 1, No = 0
+18. `surger_fracture`: Surgery under general anesthesia or limb fracture within the last month - Yes = 1, No = 0
 19. `active_malignancy`: Current or recently treated malignancy (solid or hematologic, within last year) - Yes = 1, No = 0
-20. **Unilateral Lower Limb Pain: ** Pain affecting only one leg (left or right) - Yes = 1, No = 0
-21. **Pain Lower limb edema: ** Pain and swelling in the legs, ankles, or feet — Yes = 1, No = 0
-22. **Actue Resp: ** Presence of acute respiratory distress syndrome — Yes = 1, No = 0
-23. **rvsp_based_age: ** Right Ventricular Systolic Pressure is considered elevated based on age-adjusted thresholds - Yes = 1, No = 0
-24. **rv_hypokines_on_echo:** Reduced or weakened contraction of the right ventricle detected via echocardiogram - Yes = 1, No = 0. 
-25. **pulmonary_hypertension: ** High blood pressure affecting the lungs and right side of the heart - Yes = 1, No = 0 
-26. **rh_thrombus: ** Blood clot present in the right side of the heart - Yes = 1, No = 0
-27. **rh_strain: ** Right ventricular dysfunction due to elevated pulmonary pressures - Yes = 1, No = 0
-28. **tricuspid_regurgitation: ** Tricuspid valve does not close properly, allowing blood to flow backward - Yes = 1, No = 0
-29. **septal_bowing: ** Abnormal inward curvature of the interventricular septum - Yes = 1, No = 0
+20. `unilateral_lower_limb_pain`: Pain affecting only one leg (left or right) - Yes = 1, No = 0
+21. `pain_lower_limb_edema`: Pain and swelling in the legs, ankles, or feet - Yes = 1, No = 0
+22. `acute_resp`: Presence of acute respiratory distress syndrome - Yes = 1, No = 0
+23. `rvsp_based_age`: Right Ventricular Systolic Pressure is considered elevated based on age-adjusted thresholds - Yes = 1, No = 0
+24. `rv_hypokines_on_echo`: Reduced or weakened contraction of the right ventricle detected via echocardiogram - Yes = 1, No = 0. 
+25. `pulmonary_hypertension`: High blood pressure affecting the lungs and right side of the heart - Yes = 1, No = 0 
+26. `rh_thrombus`: Blood clot present in the right side of the heart - Yes = 1, No = 0
+27. `rh_strain`: Right ventricular dysfunction due to elevated pulmonary pressures - Yes = 1, No = 0
+28. `tricuspid_regurgitation`: Tricuspid valve does not close properly, allowing blood to flow backward - Yes = 1, No = 0
+29. `septal_bowing`: Abnormal inward curvature of the interventricular septum - Yes = 1, No = 0
 
 ```{r binary_barplots, fig.width=10, fig.height=29}
 binary_vars <- categorical_vars[!categorical_vars %in% c("race", "heart_rate_geneva", "bmi_marker", "age_group")]
@@ -2694,12 +2693,12 @@ binary_plots <- map(binary_vars, ~ {
 grid_plots <- do.call("grid.arrange", c(binary_plots, ncol = 4))
 ```
 
-The bar graphs for all other non-binary categorical variables are shown below. The information regarding each level of the variables are indicated as: 
+The bar graphs for all other non-binary categorical variables (multi-level variables) are shown below. The information regarding each level of the variables are indicated as: 
 
-30. **Race: ** Race has 6 factors and is classified as - **1** =  African American/Black, **2** = Hispanic/Latino, **3** = White/Caucasuain, **4** = Asian, **5** = Indian-American, **6** = Other 
-31. **BMI_marker: ** BMI Marker has 6 categories and is classified as - **Underweight: ** BMI less than 18.5, **Normal: ** BMI between 18.5-24.9, **Overweight: ** BMI betwen 25-29.9, **Obesity Class 1: ** 30-34.9, **Obesity Class 2:**  35-39.9, **Obesity Class 3: ** 40 or greater (also referred to as severe or morbid obesity) 
-32. **heart_rate_geneva: ** Heart Rate Geneva has 3 categories and is classified as - **1** = <75 bpm, **2** = 75–94 bpm, **3** = ≥95 bpm
-33. **age_group: ** Age Group has 7 factors and is classified as - "19–30","31–40","41-50", "51-60", "61-70", "71-80", "81+"
+30. `race`: Race has 6 factors and is classified as - **1** =  African American/Black, **2** = Hispanic/Latino, **3** = White/Caucasuain, **4** = Asian, **5** = Indian-American, **6** = Other 
+31. `bmi_marker`: BMI Marker has 6 categories and is classified as - **Underweight: ** BMI less than 18.5, **Normal: ** BMI between 18.5-24.9, **Overweight: ** BMI betwen 25-29.9, **Obesity Class 1: ** 30-34.9, **Obesity Class 2:**  35-39.9, **Obesity Class 3: ** 40 or greater (also referred to as severe or morbid obesity) 
+32. `heart_rate_geneva`: Heart Rate Geneva has 3 categories and is classified as - **1** = <75 bpm, **2** = 75–94 bpm, **3** = ≥95 bpm
+33. `age_group`: Age Group has 7 factors and is classified as - "19–30", "31–40", "41-50", "51-60", "61-70", "71-80", "81+"
 
 ```{r nonbinary_barplots, fig.width=10, fig.height=7}
 non_binary_vars <- c("race", "bmi_marker", "heart_rate_geneva", "age_group")
@@ -2745,15 +2744,15 @@ do.call("grid.arrange", c(nonbinary_plots, ncol = 2))
 
 The following tables display the summary statistics for the continuous predictor variables. Metrics include mean, median, standard deviation, IQR, Q1, Q3, Minimum, Maximum, and Range. The information regarding each variable are indicated as: 
 
-34. **Age: ** Patient age ranges from 19 to 96 years old. 
-35. **BMI: ** Body Mass index is a measure of body fat based on height and weight that applies to adult men and women. The accpetable range of BMI is between 18.5 and 24.9. 
-36. **d_dimer_value: ** Measurement of a protein fragment called D-dimer, which is released when blood clots break down. Elevated d-dimer levels are considered to be levels above the thresholds: 500 ng/mL or 0.5 ug/mL. 
-37. **bnp_levels: ** Measurement of B-type natriuretic peptide (BNP) levels in the blood, which is a hormone produced by the heart. Elevated BNP levels are considered to be levels above the threshold: 100 pg/mL. 
-38. **echo_rvsp_value: ** Measurement of right ventricular systolic pressure (RVSP) in mmHg. Normal right ventricular systolic pressures are generally considered to be less than 40 mmHg. 
-39. **heart_rate: **  A normal resting heart rate for adults ranges from 60 to 100 beats per minute. 
-40. **systolic: ** Systolic Blood Pressure measures the pressure in the arteries when the heart contracts and pumps blood out. 
-41. **diastolic: ** Diastolic Blood Pressure measures the pressure in the arteries when the ehart is resting betwen beats. 
-42. **map_value: ** Mean Arterial Pressure is an average pressure in the arteries over a cardiac cycle. Normal MAP values are considered to be greater than or equal to 65 mmHg. Abnormal MAP values are considered to be less than 65 mmHg. 
+34. `age`: Patient age ranges from 19 to 96 years old. 
+35. `bmi`: Body Mass index is a measure of body fat based on height and weight that applies to adult men and women. The accpetable range of BMI is between 18.5 and 24.9. 
+36. `d_dimer_value`:  Measurement of a protein fragment called D-dimer, which is released when blood clots break down. Elevated d-dimer levels are considered to be levels above the thresholds: 500 ng/mL or 0.5 ug/mL. 
+37. `bnp_levels`: Measurement of B-type natriuretic peptide (BNP) levels in the blood, which is a hormone produced by the heart. Elevated BNP levels are considered to be levels above the threshold: 100 pg/mL. 
+38. `echo_rvsp_value`: Measurement of right ventricular systolic pressure (RVSP) in mmHg. Normal right ventricular systolic pressures are generally considered to be less than 40 mmHg. 
+39. `heart_rate`:  A normal resting heart rate for adults ranges from 60 to 100 beats per minute. 
+40. `systolic`: Systolic Blood Pressure measures the pressure in the arteries when the heart contracts and pumps blood out. 
+41. `diastolic`: Diastolic Blood Pressure measures the pressure in the arteries when the ehart is resting betwen beats.
+42. `map_value`: Mean Arterial Pressure is an average pressure in the arteries over a cardiac cycle. Normal MAP values are considered to be greater than or equal to 65 mmHg. Abnormal MAP values are considered to be less than 65 mmHg. 
 
 ```{r}
 continuous_vars <- c("age", "bmi", "d_dimer_value", "bnp_levels", 
@@ -2827,20 +2826,23 @@ do.call("grid.arrange", c(box_plots, ncol = 3))
 ```
 
 # Part D: Stratified Analysis (Bivariate): 
-### Stratifying individuals by the presence of Pulmonary Embolism: 
+**Stratifying individuals by the presence of Pulmonary Embolism: **
 
 In this section, a bivariate analysis is conducted to examine the distribution of predictor variables stratified by the presence (1) or absence (0) of pulmonary embolism (PE). This approach allows for the assessment of potential associations between each predictor and the PE outcome.
 
+## Categorical Variables: Stratified Analysis 
+
 The bivariate analysis first focuses on the **categorical variables**, evaluating differences in their distributions across PE status groups.
 
-**Statistical Summary Table (Cross-Tabulations) **
+### Statistical Summary Table (Cross-Tabulations) 
+
 The table below summarizes a comparison of two patient groups: **Group 1**, consisting of patients diagnosed with pulmonary embolism (PE) (n = 143), and **Group 2**, consisting of patients without PE (n = 138). The table presents key clinical categorical variables as counts and percentages. Statistical significance was assessed using Pearson’s Chi-squared test or Fisher’s Exact test, as appropriate depending on the sample sizes and data distributions. 
 
 To illustrate interpretability, consider the variable **smoking history**. Among patients diagnosed with PE, **27% reported a history of smoking**, while **73% did not.** In contrast, among patients without PE, **25% were smokers** and **75% were non-smokers.** The **p-value for smoking history is 0.8**, indicating **no statistically significant** difference in smoking status between individuals with and without PE. This p-value reflects the result of a Chi-squared test, which evaluates whether the observed distribution of smoking status differs meaningfully between the two groups (whether the proportions of smokers and non-smokers in the PE-positive and PE-negative groups differ beyond what would be expected by chance).
 
 In contrast, when examining the variable **dvt_in_lower_extremity**, a notable difference emerges between groups. Among patients diagnosed with PE, **42% reported having experienced deep vein thrombosis (DVT)** in the lower extremities, while **58% did not.** In comparison, among patients without PE, **12% had experienced DVT**, whereas **88% had not.** The **p-value for this variable is <0.001,** indicating a **statistically significant difference** in the occurrence of lower extremity DVT between individuals with and without PE. This very low p-value suggests that the distribution of DVT status differs meaningfully between the two groups and that the proportions of individuals with and without DVT in the PE-positive and PE-negative groups are unlikely to be due to chance.
 
-While further validation may be warranted, the results of this cross-tabulation suggest that the distribution of the following categorical variables differs significantly between patients with and without pulmonary embolism (PE), supporting their potential clinical relevance in distinguishing PE status: **positive_d_dimer **,  **dvt_in_lower_extremity **,  **pe_more_likely **,  **dvt_pe **,  **septal_bowing **,  **heart_rate_geneva **.  
+While further validation may be warranted, the results of this cross-tabulation suggest that the distribution of the following categorical variables differs significantly between patients with and without pulmonary embolism (PE), supporting their potential clinical relevance in distinguishing PE status: **positive_d_dimer **,  **dvt_in_lower_extremity **,  **pe_more_likely **,  **dvt_pe **,  **septal_bowing **,  **heart_rate_geneva **, **rvsp_based_age**.   
 
 ```{r}
 cat_summary_table <- merged_data_no_2019 %>%
@@ -2855,7 +2857,7 @@ cat_summary_table <- merged_data_no_2019 %>%
 cat_summary_table
 ```
 
-**Visualizations: Stacked Bar Graphs ** 
+### Visualizations: Stacked Bar Graphs 
 
 The distributions of categorical variables, stratified by PE status, are visualized using stacked bar charts to enhance interpretability beyond the previous statistical cross-tabulations.
 
@@ -2904,9 +2906,11 @@ stacked_plots <- map(key_cat_vars, ~ create_stacked_bar(merged_data_no_2019, .x)
 do.call(grid.arrange, c(stacked_plots, ncol = 2))
 ```
 
+## Continuous Variables: Stratified Analysis 
+
 Bivariate analysis is next conducted on the continuous variables: 
 
-**Statistical Summary Table (Cross-Tabulations) **
+### Statistical Summary Table (Cross-Tabulations)
 
 The table below presents a bivariate analysis comparing continuous clinical variables between patients with pulmonary embolism (PE, n = 143) and those without PE (n = 138). Data are summarized as **mean (standard deviation)**, and comparisons across PE status groups were performed using the **Wilcoxon rank-sum test**, a non-parametric method for comparing two independent groups.
 
@@ -2956,6 +2960,7 @@ summary_tables %>%
 
 ```
 
+### Visualizations 
 The boxplots below display the distribution of continuous clinical variables, stratified by the presence or absence of pulmonary embolism (PE). Each plot compares the spread, central tendency, and potential outliers of a given variable between patients diagnosed with PE (PE = 1) and those without PE (PE = 0). This visual representation helps highlight differences in variable distributions across the two groups and supports the interpretation of statistical comparisons presented earlier in the statistical summary tables. 
 
 ```{r boxplots-pe-status, fig.width=14, fig.height=10, echo=FALSE, warning=FALSE, message=FALSE}
@@ -3078,11 +3083,11 @@ new_predictors <- c("age", "gender", "bmi_marker", "race",
                       "covid", "elevated_bnp", "elevated_troponin", 
                       "dvt_in_lower_extremity", "rvsp_based_age", 
                       "rv_hypokines_on_echo", "pulmonary_hypertension", 
-                      "rh_strain", "tricuspid_regurgitation", "septal_bowing")
+                      "rh_strain", "tricuspid_regurgitation", "septal_bowing") 
 
 new_formula_string <- paste("pe_status ~", paste(new_predictors, collapse = " + "))
 new_model <- glm(as.formula(new_formula_string), family = binomial, data = merged_data_no_2019)
-summary(new_model)
+summary(new_model) 
 ```
 
 To further assess multicollinearity, the **Variance Inflation Factor (VIF) ** was examined for all predictors. All VIF values were found to be below 5, indicating that no severe multicollinearity is present among the variables included in the model.
