@@ -51,8 +51,8 @@ library(pROC)
 library(rcompanion)
 library(penalized)
 library(caret)
-library(caret)
 library(ResourceSelection)
+
 ```
 
 # Part A: Data Wrangling
@@ -70,7 +70,7 @@ The objectives of this preparatory phase were:
 4. To identify type of missing data (MCAR, MAR, MNAR) and carry out imputation or complete case analysis.
 
 ```{r}
-full_data <- "~/Documents/Desert Valley Research /desert_valley.xlsx"
+full_data <- "desert_valley.xlsx"
 cases <- read_excel(full_data, sheet = 1)
 controls <- read_excel(full_data, sheet = 2)
 ```
@@ -3665,15 +3665,6 @@ merged_data_no_covid %>%
 --This marks the end of the analysis for the first research queestion -- 
 
 
-
-
-
-
-
-
-
-
-
 # Second Research Objective   
 
 The **secondary research question** in this study is as follows:  
@@ -3685,7 +3676,7 @@ The **secondary research question** in this study is as follows:
 From the first research question, we identified the most significant predictors of pulmonary embolism as:  
 `dvt_in_lower_extremity`, `echo_rvsp_value`, and `positive_d_dimer`.  
 
-In this part of the analysis, we investigate whether adding these predictors to the **Modified Wells Score** can improve its diagnostic performance (increase sensitivity and specificity).  
+In this part of the analysis, we will evaluate whether incorporating these significant variables into the current **Modified Wells Scoring System** meaningfully improves its overall performance in terms of **model fit** and **predictive performance**. Model fit was assessed using AIC, BIC, and McFadden’s pseudo R², while predictive performance was evaluated in terms of both discrimination (Area Under the ROC Curve, AUC),  classification accuracy (sensitivity, specificity, PPV, NPV, and overall accuracy), and calibration performance (how well the predicted probabilities match real world outcome frequencies). The analysis also aimed to identify the most parsimonious subset of these additional predictors that provides the optimal balance between model fit, predictive performance, and simplicity for practical screening for pulmonary embolism. 
 
 **Original Variables in the Modified Wells Scoring System: **  
 
@@ -3702,9 +3693,9 @@ In this part of the analysis, we investigate whether adding these predictors to 
 - *PE unlikely*: **≤ 4 points**  
 
 ### Logistic Model Fitting (Modified Wells Scoring System)
-> *Does adding all three (essentially two due to repeated variable) significant predictors improve the predictive performance of the original Modified Wells diagnostic scoring system?*
+> *Does adding all three (essentially two due to repeated variable) significant predictors improve the model fit and predictive performance of the original Modified Wells diagnostic scoring system?*
 
-Fitting Logistic Regression Model with Original Predictors: To evaluate the predictive performance of the original **Modified Wells Score**, a logistic regression model was fitted with the binary outcome variable `pe_status` (presence or absence of pulmonary embolism) regressed on the seven original predictors that comprise the **Modified Wells criteria.**
+Fitting Logistic Regression Model with Original Predictors: To evaluate the overall performance of the original **Modified Wells Score**, a logistic regression model was fitted with the binary outcome variable `pe_status` (presence or absence of pulmonary embolism) regressed on the seven original predictors that comprise the **Modified Wells criteria.**
 
 ```{r}
 wells_components <- c("dvt_in_lower_extremity", "pe_more_likely", "heart_rate_100", 
@@ -3717,7 +3708,7 @@ model_wells_original <- glm(pe_status ~ .,
 
 3 significant predictors: `dvt_in_lower_extremity`, `echo_rvsp_value`, and `positive_d_dimer` 
  
-Fitting Logistic Regression Model with Additional Predictors: To evaluate the impact of incorporating additional statistically significant predictors on the diagnostic performance of the Modified Wells Score, the original model was expanded to include two additional variables: `echo_rvsp_value` and `positive_d_dimer` because the variable `dvt_in_lower_extremity` is already included in the original model. 
+Fitting Logistic Regression Model with Additional Predictors: To evaluate whether incorporating additional statistically significant predictors improves the overall performance of the original Modified Wells Score, the original model was expanded to include two additional variables: `echo_rvsp_value` and `positive_d_dimer` because the variable `dvt_in_lower_extremity` is already included in the original model. 
 
 ```{r}
 enhanced_predictors <- c(wells_components, "positive_d_dimer", "echo_rvsp_value")
@@ -3728,7 +3719,7 @@ model_wells_enhanced <- glm(pe_status ~ .,
                      family = binomial)
 ```
 
-Before conducting the likelihood ratio test to compare the two nested logistic regression models, both **perfect separation** and **multicollinearity** were assessed to ensure model validity. In examining perfect separation, the variable `haemoptysis` was identified as problematic. Specifically, all six patients who exhibited `haemoptysis` were diagnosed with pulmonary embolism (PE), while none of the non-PE patients had haemoptysis. This indicates that `haemoptysis` perfectly predicts the outcome variable `pe_status`. Consequently, whenever haemoptysis is present, PE is always present in the dataset, leading to a situation where the maximum likelihood estimation (MLE) cannot properly converge. This results in an infinitely large estimated regression coefficient and inflated standard errors, indicating instability in the model estimates. 
+Before conducting the likelihood ratio test to compare the two nested logistic regression models, both **perfect separation** and **multicollinearity** were assessed to ensure model validity. In examining perfect separation, the variable `haemoptysis` was identified as problematic. Specifically, all six patients who exhibited `haemoptysis` were diagnosed with pulmonary embolism (PE), while none of the non-PE patients had haemoptysis. This indicates that `haemoptysis` perfectly predicts the outcome variable `pe_status`. Consequently, whenever haemoptysis is present, PE is always present in the dataset, leading to a situation where the maximum likelihood estimation (MLE) cannot properly converge. This results in an infinitely large estimated regression coefficient and inflated standard errors, indicating instability in the model estimates. When examining the standard error of the coefficient estimate in the model summaries of both fitted models earlier, the standard error of the `haemoptysis` variable was extremely large (greater than 500). 
 
 As a result, a bias-reduced logistic regression model, also known as **Firth’s logistic regression**, was employed to address the issue of perfect separation. This approach uses a penalized likelihood method that mitigates bias in coefficient estimates, particularly in small samples or when complete or quasi-separation occurs in the data. By introducing a penalty term into the likelihood function, Firth’s method stabilizes estimation and prevents infinite parameter estimates. In this study, it was applied to correct the estimation bias caused by the variable `haemoptysis`, which perfectly predicted pulmonary embolism (PE). This variable was retained in the model despite perfect separation because it represents a clinically essential component of the original Modified Wells Score diagnostic criteria.
 
@@ -3764,178 +3755,348 @@ vif_results <- car::vif(model_wells_original)
 print(vif_results)
 ```
 
-All Variance Inflation Factor (VIF) values were below 5, indicating that no strong multicollinearity was present among the wells predictors, as well as `positive_d_dimer` and `echo_rvsp_value` in the model. This suggests that the estimated regression coefficients are stable and not inflated due to redundant information between variables. Likelihood ratio tests comparing the reduced and full models are next performed after verifying that both models satisfied the assumptions of logistic regression, specifically the absence of perfect separation and multicollinearity among predictors.
+All Variance Inflation Factor (VIF) values were below 5, indicating that no strong multicollinearity was present among the wells predictors, as well as `positive_d_dimer` and `echo_rvsp_value` in the model. This suggests that the estimated regression coefficients are stable and not inflated due to redundant information between variables.
 
 ```{r}
 vif_results <- car::vif(model_wells_enhanced)
 print(vif_results)
 ```
 
-### Likelihood Ratio Test between Reduced and Full Model (after adding 2 predictors) 
+Likelihood ratio tests comparing the reduced and full models are next performed after detecting perfect separation and then addressing it by using Firth's penalized logistic regression along with assessing multicollinearity. 
+
+### Statistical Comparison: Likelihood Ratio Test between Reduced and Full Model (after adding 2 new predictors) 
 
 A likelihood ratio test was conducted to compare two nested Firth's penalized logistic regression models. The null hypothesis states that the reduced model, which includes only the original **Modified Wells Score** predictors, provides an adequate fit to the data. The alternative hypothesis suggests that the extended model, which includes the original predictors plus two additional variables, offers a significantly better fit. It is important to note that the variable `dvt_in_lower_extremity` is already part of the original Modified Wells Score model. 
 
-The test produced a test statistic value of **11.805** on 2 degrees of freedom and a **p-value of 0.002733**, indicating strong evidence against the null hypothesis. Therefore, it can be concluded that adding the predictors `positive_d_dimer` and `echo_rvsp_value` significantly improves the model’s ability to explain variation in pulmonary embolism diagnosis compared to the original Modified Wells Score model. Statistically, this suggests that the enhanced model has greater predictive power and better discriminates between patients with and without pulmonary embolism. In other words, the two additional predictors explain significant additional variance in PE status beyond what the predictors of the original Modified Wells Score alone explains. 
+The test produced a test statistic value of **30.6026** on 2 degrees of freedom and a **p-value of 0.000000226**, indicating strong evidence against the null hypothesis. Therefore, it can be concluded that adding the predictors `positive_d_dimer` and `echo_rvsp_value` significantly improves the model's ability to explain significant additional variation in pulmonary embolism status beyond what the predictors of the original Modified Wells Score alone explains. This suggests that the full model provides a better fit to the in-sample data compared to the original Modified Wells Score model. 
 
 ```{r}
-ll_original <- model_wells_original_firth$loglik[2]
-ll_enhanced <- model_wells_enhanced_firth$loglik[2]
+ll_original  <- model_wells_original_firth$loglik["full"]
+ll_enhanced  <- model_wells_enhanced_firth$loglik["full"]
 
-lr_stat <- -2 * (ll_original - ll_enhanced)
-df_diff <- length(coef(model_wells_enhanced_firth)) - length(coef(model_wells_original_firth))
+lr_stat <- 2 * (ll_enhanced - ll_original)
+
+df_diff <- (length(coef(model_wells_enhanced_firth)) -
+            length(coef(model_wells_original_firth)))  
+
 p_value <- pchisq(lr_stat, df = df_diff, lower.tail = FALSE)
 
-cat(sprintf("Likelihood ratio test: χ²(%d) = %.3f, p = %f\n", 
+cat(sprintf("Penalized LRT: χ²(%d) = %.4f, p = %.9f\n",
             df_diff, lr_stat, p_value))
 ```
 
-### Model Selection 
+### Statistical Comparison: Model Selection Criteria: Penalized Log-likelihood, Penalized Deviance, AIC, BIC, McFadden-like Pseudo R² value
 
-**Model Selection Criteria: McFadden-like Pseudo R² value** 
+**Model Selection Criteria #1: Penalized Log-Likelihood and Penalized Deviance ** 
 
-Model selection criteria were used to further evaluate the fit of the two nested models. Because AIC and BIC values are not available for Firth’s logistic regression, a McFadden-like pseudo R² was computed using the penalized log-likelihoods from the original Modified Wells model and the enhanced model, which incorporated two additional predictors. While this measure is not identical to the conventional McFadden’s R² due to the use of penalized rather than maximum likelihood estimation, it remains valid under the Firth correction. It provides a reliable indicator of relative model improvement, even in the presence of perfect separation caused by the `haemoptysis` variable. This pseudo R² follows the same computational logic as McFadden’s R² (using the ratio of penalized log-likelihoods) and reflects the model’s overall goodness of fit, with higher values indicating better performance.
-
-From the calculations, the McFadden-like pseudo R² value for the original Modified Wells model was **0.352**, whereas the enhanced model achieved a value of **0.401**. The higher pseudo-R² for the enhanced model indicates an overall improvement in model fit, consistent with the results of the likelihood ratio test, which also demonstrated that the addition of the new predictors significantly improved the model’s explanatory ability for pulmonary embolism diagnosis. 
+To further compare model fit between the two Firth logistic regression models, we examined the **penalized deviance**, defined as −2 times the fitted penalized log-likelihood. Penalized deviance was **307.20** for the original Modified Wells model and **276.59** for the enhanced model. The deviance difference (original − enhanced) was **30.60**, indicating that the enhanced model achieves a substantially lower penalized deviance (better in-sample fit) under the Firth penalized likelihood. This result is consistent with the earlier penalized likelihood ratio test showing improved fit after adding `positive_d_dimer` and `echo_rvsp_value`.
 
 ```{r}
-ll_null_orig <- model_wells_original_firth$loglik["null"]
-ll_full_orig <- model_wells_original_firth$loglik["full"]
-ll_null_enh <- model_wells_enhanced_firth$loglik["null"] 
-ll_full_enh <- model_wells_enhanced_firth$loglik["full"]
+ll_orig <- model_wells_original_firth$loglik["full"]
+ll_enh  <- model_wells_enhanced_firth$loglik["full"]
 
-r2_orig <- 1 - (ll_full_orig / ll_null_orig)
-r2_enh <- 1 - (ll_full_enh / ll_null_enh)
+deviance_original <- -2 * ll_orig
+deviance_enhanced  <- -2 * ll_enh
 
-results <- data.frame(
-  Model = c("Original Wells (Firth)", "Enhanced Wells (Firth)"),
-  Pseudo_R2 = round(c(r2_orig, r2_enh), 3),
-  Description = "McFadden-like measure from penalized likelihood"
+model_comparison_deviance <- data.frame(
+  Model = c("Reduced (Original Wells, Firth)",
+            "Full (Enhanced Wells, Firth)",
+            "Difference (Original - Enhanced)"),
+  Deviance = round(c(
+    as.numeric(deviance_original),
+    as.numeric(deviance_enhanced),
+    as.numeric(deviance_original - deviance_enhanced)
+  ), 2),
+  stringsAsFactors = FALSE
 )
-results
+
+print(model_comparison_deviance)
 ```
+
+**Model Selection Criteria #2: AIC and BIC (computed from the penalized log-likelihood)** 
+
+To further compare in-sample model fit between the two nested Firth logistic regression models, we computed the Akaike Information Criterion (AIC) and Bayesian Information Criterion (BIC) using the models’ penalized log-likelihoods. Both criteria balance goodness of fit with a penalty for model complexity where lower values indicate a better tradeoff between fit and parsimony.
+
+Relative to the reduced model, the enhanced model had an AIC that was lower by 26.60 units and a BIC that was lower by 18.85 units. The decreases in both criteria indicate that the improvement in fit from adding both variables, `positive_d_dimer` and `echo_rvsp_value` outweighs the penalty for including additional parameters even under BIC’s more conservative complexity penalty.
+
+Taken together with the penalized likelihood ratio test results, these findings support selecting the enhanced model as providing better in-sample fit after accounting for its greater complexity.
+
+```{r}
+k_reduced <- length(coef(model_wells_original_firth))   
+k_full    <- length(coef(model_wells_enhanced_firth))  
+
+n_reduced <- model_wells_original_firth$n
+n_full    <- model_wells_enhanced_firth$n
+
+n <- min(n_reduced, n_full)
+
+aic_reduced <- -2 * ll_orig + 2 * k_reduced
+aic_full    <- -2 * ll_enh    + 2 * k_full
+
+bic_reduced <- -2 * ll_orig + log(n) * k_reduced
+bic_full    <- -2 * ll_enh    + log(n) * k_full
+
+model_comparison <- data.frame(
+  Model = c("Reduced (Original Wells, Firth)",
+            "Full (Enhanced Wells, Firth)",
+            "Difference (Reduced - Full)"),
+  AIC = round(c(aic_reduced, aic_full, aic_reduced - aic_full), 2),
+  BIC = round(c(bic_reduced, bic_full, bic_reduced - bic_full), 2),
+  stringsAsFactors = FALSE
+)
+
+print(model_comparison)
+```
+
 
 ### Comparison of Predictive Performance between 2 Models 
 
+To evaluate and compare the predictive discrimination of the original Modified Wells model and the enhanced model with two additional predictors, repeated stratified cross-validation was used. The analysis dataset was partitioned into 10 folds, and this procedure was repeated 5 times, yielding 50 train–test evaluations. In each evaluation, a Firth logistic regression model was fit on the training folds (9/10 of the data), predicted probabilities were generated for the held-out fold (1/10 of the data), and a test-fold AUC was computed from the ROC curve. This process was performed separately for the original and enhanced models, and the fold-wise AUC difference (enhanced − original) was calculated to quantify the incremental gain in discrimination. Finally, the mean and standard deviation of the AUC across all folds were summarized for each model and presented in a table.
+
 **Method 1: Comparison of AUC (Area under the Curve) Values: **
 
-Special Note: With a total of 375 subjects, the dataset is sufficiently large to conduct model comparison without splitting into separate training and testing sets. Splitting the data would reduce the statistical power and compromise the ability to detect meaningful differences between models.
+Using repeated cross-validation, the out-of-sample discrimination was:
 
-To evaluate the discriminative performance of the two Firth logistic regression models: 1. the original Modified Wells model and the 2. enhanced model (which includes `positive_d_dimer` and `echo_rvsp_value`), several performance metrics were computed:
+- Original Modified Wells Model: **Average AUC = 0.8369**
+- Enhanced Model: **Average AUC = 0.8570**
 
-- Original Modified Wells Model: **AUC = 0.8471846 **
-- Enhanced Modified Wells Model: **AUC = 0.8773199 **
-
-The difference in AUC values between the two models is **0.03013526**. The AUC measures a model’s ability to correctly distinguish between individuals with and without pulmonary embolism (PE) across all possible classification thresholds. A value of 0.5 indicates no discrimination, whereas 1.0 represents perfect discrimination. Both models demonstrate strong discriminative ability (AUC > 0.80), but the enhanced model shows modest improvement.
-
-To assess whether this improvement is statistically significant, DeLong’s test for two correlated ROC curves was performed. The test produced a Z-value of –2.51 and a p-value of 0.012, indicating that the improvement in AUC is statistically significant at the 0.05 level. Moreover, the 95% confidence interval for the AUC difference (–0.0537, –0.0066) does not include zero, further confirming the significance of the improvement.
-
-These findings indicate that incorporating the two additional predictors (`positive_d_dimer` and `echo_rvsp_value`) significantly enhances the model’s ability to discriminate between PE and non-PE patients. In summary, the enhanced Modified Wells model provides superior predictive performance and greater diagnostic accuracy compared to the original model. 
+The mean fold-level difference in AUC across the repeated cross-validation splits was **ΔAUC = 0.0202**, indicating that the enhanced model provides a modest improvement in discrimination. The AUC measures a model’s ability to distinguish between individuals with and without pulmonary embolism across all possible classification thresholds (0.5 = no discrimination; 1.0 = perfect discrimination). Both models demonstrated strong discrimination (AUC > 0.80), with slightly higher AUC for the enhanced model.
 
 ```{r}
-pred_original <- predict(model_wells_original_firth, type = "link")
-pred_enhanced <- predict(model_wells_enhanced_firth, type = "link")
+set.seed(123)
+dat <- merged_data_no_covid[, c("pe_status", enhanced_predictors)]
+dat$pe_status <- factor(dat$pe_status, levels = c("0","1"))
+folds <- createMultiFolds(dat$pe_status, k = 10, times = 5)
 
-roc_original <- roc(merged_data_no_covid$pe_status ~ pred_original)
-roc_enhanced <- roc(merged_data_no_covid$pe_status ~ pred_enhanced)
+calc_fold_auc <- function(train_idx, predictors) {
+  train <- dat[train_idx, , drop = FALSE]
+  test  <- dat[-train_idx, , drop = FALSE]
 
-cat("AUC - Original Wells:", auc(roc_original), "\n")
-cat("AUC - Enhanced Wells:", auc(roc_enhanced), "\n")
-cat("AUC Difference:", auc(roc_enhanced) - auc(roc_original), "\n")
+  fit <- logistf(pe_status ~ ., data = train[, c("pe_status", predictors)])
+  p   <- predict(fit, newdata = test, type = "response")
+
+  roc_obj <- roc(test$pe_status, p, levels = c("0","1"), direction = "<", quiet = TRUE)
+  as.numeric(auc(roc_obj))
+}
+
+auc_orig <- sapply(folds, calc_fold_auc, predictors = wells_components)
+auc_enh  <- sapply(folds, calc_fold_auc, predictors = enhanced_predictors)
+
+cv_res <- data.frame(
+  Fold = names(folds),
+  AUC_Original = auc_orig,
+  AUC_Enhanced = auc_enh,
+  Delta_AUC = auc_enh - auc_orig
+) %>%
+  mutate(across(c(AUC_Original, AUC_Enhanced, Delta_AUC), ~ round(.x, 4)))
+
+auc_summary_long <- bind_rows(
+  data.frame(Metric = "AUC (Original Wells, Firth)", Mean = mean(cv_res$AUC_Original), SD = sd(cv_res$AUC_Original)),
+  data.frame(Metric = "AUC (Enhanced Wells, Firth)", Mean = mean(cv_res$AUC_Enhanced), SD = sd(cv_res$AUC_Enhanced)),
+  data.frame(Metric = "ΔAUC (Enhanced − Original)",  Mean = mean(cv_res$Delta_AUC),  SD = sd(cv_res$Delta_AUC))
+) %>%
+  mutate(across(c(Mean, SD), ~ round(.x, 4)))
+
+auc_summary_long %>%
+  kbl(
+    caption = "Repeated 10-fold CV (5 repeats): Mean AUC and SD",
+    col.names = c("Metric", "Mean", "SD"),
+    align = "lcc",
+    format = "html"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) %>%
+  row_spec(0, bold = TRUE)
+
+tt_auc <- t.test(cv_res$AUC_Enhanced, cv_res$AUC_Original, paired = TRUE)
+tt_auc
 ```
 
-```{r}
-roc_test <- roc.test(roc_original, roc_enhanced, method = "delong")
-print(roc_test)
-```
+A paired t-test was applied to the 50 fold-level ΔAUC (enhanced-original) from the repeated 10-fold cross-validation to assess whether the enhanced model tends to yield higher AUC than the original model on the same held-out splits. The test produced **t = 3.5547, df = 49, and p = 0.0008496**, providing evidence that the ΔAUC is positive on average across the CV evaluations. Overall, these results sugget that adding `positive_d_dimer` and `echo_rvsp_value` yields a small but consistent improvement in out of sample discrimination. 
 
 **Method 2: Classification Performance at Optimal Cutpoint ** 
 
-To compare the classification performance of the two Firth logistic regression models, predicted probabilities were converted into binary outcomes using optimal cutpoints determined by **Youden’s Index** from the ROC curves. Youden’s Index, defined as (Sensitivity + Specificity – 1), identifies the threshold that maximizes the model’s ability to correctly classify positive and negative cases. Using these optimal thresholds, key performance metrics such as **Accuracy**, **Sensitivity**, **Specificity**, **Positive Predictive Value (PPV)**, and **Negative Predictive Value (NPV)** were calculated for both models to evaluate and compare their diagnostic performance.
+To compare the classification performance of the two firth logistic regression models, predicted probabilities were converted into binary outcomes using optimal cutpoints determined by Youden’s Index from the ROC curves. Youden’s Index, defined as (Sensitivity + Specificity – 1), identifies the threshold that maximizes the model’s ability to correctly classify positive and negative cases. Using these optimal thresholds, key performance metrics such as Accuracy, Sensitivity, Specificity, Positive Predictive Value (PPV), and Negative Predictive Value (NPV) were calculated for both models to evaluate and compare their diagnostic performance. The Firth logistic regression models were fitted on the training folds and the training fold ROC curve was used to choose an optimal cutoff determined by Youden's index. The cutoff was then applied to the held-out fold to classify individuals as having pulmonary embolsim versus not. This process is repeated for the two models across all the folds where the averages of each metric across the 50 held out evaluations. 
 
-At the optimal cutoff determined by Youden’s Index, both models demonstrated strong classification performance in predicting the presence of pulmonary embolism (PE). **Accuracy** increased slightly from **0.787** in the original Modified Wells model to **0.813** in the enhanced model, indicating an overall improvement in the model’s predictive ability to classify individuals correctly as having or not having PE.
+**Accuracy** increased slightly from **0.7666 (original) to 0.7849 (Enhanced)** with a difference of **+0.0183**, indicating an overall increase, but negligible, in the model’s predictive ability to classify individuals correctly as having or not having pulmonary embolism.
 
-Sensitivity, which measures the model’s ability to correctly identify patients with PE, decreased marginally from **0.930** to **0.882**. This suggests that the enhanced model is slightly less sensitive but may have traded a small proportion of true positives for a better balance in other performance metrics, such as accuracy and specificity.
+**Sensitivity**, which measures the model’s ability to correctly identify patients with pulmonary embolism, increased from **0.6365 to 0.7141** with a difference of **+0.0776**. This suggests that the enhanced model is more sensitive meaning that it catches more true pulmonary embolism cases. **Specificity**, representing the ability to correctly identify individuals without pulmonary embolism, decreased from **0.8846 to 0.8491** with a difference of **-0.0355**, indicating that the enhanced model is marginally less effective at ruling out non-cases and may produce slightly more false positives.
 
-Specificity, representing the ability to correctly identify individuals without PE, improved from **0.629** to **0.782**, indicating that the enhanced model more effectively distinguishes between true negatives and false positives. In addition, PPV increased from **0.734** to **0.782**, meaning that a higher proportion of individuals predicted to have PE by the enhanced model were correctly classified. Conversely, **NPV** decreased slightly from **0.892** to **0.849**, suggesting a modest reduction in the accuracy of identifying true negatives.
+In addition, **PPV** decreased slightly from **0.8472 to 0.8192** with a difference of **-0.0280**, meaning that a lower proportion of individuals predicted to have pulmonary embolism by the enhanced model were correctly classified. Conversely, **NPV** increased slightly from **0.7315 to 0.7693** with a difference of **0.0378**, suggesting a modest increase in the accuracy of identifying true negatives.
 
-In conclusion, although the enhanced model exhibited a slight reduction in sensitivity, it achieved higher specificity and positive predictive value (PPV), indicating improved diagnostic precision. This improvement means the enhanced model generates fewer false positives when identifying true cases of pulmonary embolism (PE), leading to greater confidence that positive predictions are correct. False positives are clinically important to minimize, as they can expose patients to unnecessary imaging procedures such as CT angiography, which are both costly and invasive for patiens. Therefore, this trade-off suggests that while the enhanced model may miss a small number of true PE cases, it is more effective at correctly identifying patients without PE and reducing false alarms. Overall, the enhanced model demonstrates better predictive performance compared to the original Modified Wells model. Clinically, incorporating `positive_d_dimer` and `echo_rvsp_value` enhances the diagnostic precision of the Modified Wells Score, enabling more accurate classification of true PE cases while minimizing unnecessary positive classifications.
+In conclusion, at Youden-optimal cutpoints, the enhanced model provides modestly higher sensitivity and NPV at the cost of a small reduction in specificity and PPV, with a slight net gain in accuracy.
 
 ```{r}
-optimal_orig <- coords(roc_original, "best", best.method = "youden")
-optimal_enh <- coords(roc_enhanced, "best", best.method = "youden")
+calc_metrics <- function(TP, FP, TN, FN) {
+  c(
+    Accuracy    = (TP + TN) / (TP + FP + TN + FN),
+    Sensitivity = ifelse(TP + FN == 0, NA, TP / (TP + FN)),
+    Specificity = ifelse(TN + FP == 0, NA, TN / (TN + FP)),
+    PPV         = ifelse(TP + FP == 0, NA, TP / (TP + FP)),
+    NPV         = ifelse(TN + FN == 0, NA, TN / (TN + FN))
+  )
+}
 
-class_original <- ifelse(pred_original > optimal_orig$threshold, 1, 0)
-class_enhanced <- ifelse(pred_enhanced > optimal_enh$threshold, 1, 0)
+eval_fold_classification <- function(train_idx, predictors) {
+  train <- dat[train_idx, , drop = FALSE]
+  test  <- dat[-train_idx, , drop = FALSE]
 
-cm_original <- confusionMatrix(factor(class_original), 
-                              factor(merged_data_no_covid$pe_status))
-cm_enhanced <- confusionMatrix(factor(class_enhanced), 
-                              factor(merged_data_no_covid$pe_status))
+  fit <- logistf(pe_status ~ ., data = train[, c("pe_status", predictors)])
 
-performance_comparison <- data.frame(
-  Metric = c("Accuracy", "Sensitivity", "Specificity", "PPV", "NPV"),
-  Original = c(cm_original$overall["Accuracy"],
-               cm_original$byClass["Sensitivity"],
-               cm_original$byClass["Specificity"],
-               cm_original$byClass["Pos Pred Value"],
-               cm_original$byClass["Neg Pred Value"]),
-  Enhanced = c(cm_enhanced$overall["Accuracy"],
-               cm_enhanced$byClass["Sensitivity"],
-               cm_enhanced$byClass["Specificity"],
-               cm_enhanced$byClass["Pos Pred Value"],
-               cm_enhanced$byClass["Neg Pred Value"])
-)
-print(performance_comparison)
+  p_train <- predict(fit, newdata = train, type = "response")
+  p_test  <- predict(fit, newdata = test,  type = "response")
+
+  roc_train <- roc(train$pe_status, p_train, levels = c("0","1"), direction = "<", quiet = TRUE)
+  thr <- coords(roc_train, x = "best", best.method = "youden",
+                ret = "threshold", transpose = FALSE)[["threshold"]]
+
+  pred_test <- factor(ifelse(p_test >= thr, "1", "0"), levels = c("0","1"))
+  y <- factor(test$pe_status, levels = c("0","1"))
+
+  TP <- sum(pred_test == "1" & y == "1")
+  FP <- sum(pred_test == "1" & y == "0")
+  TN <- sum(pred_test == "0" & y == "0")
+  FN <- sum(pred_test == "0" & y == "1")
+
+  c(Threshold = thr, calc_metrics(TP, FP, TN, FN))
+}
+
+res_orig <- t(sapply(folds, eval_fold_classification, predictors = wells_components))
+res_enh  <- t(sapply(folds, eval_fold_classification, predictors = enhanced_predictors))
+
+res_orig <- as.data.frame(res_orig); res_enh <- as.data.frame(res_enh)
+res_orig$Fold  <- names(folds);      res_enh$Fold  <- names(folds)
+res_orig$Model <- "Original Wells (Firth)"
+res_enh$Model  <- "Enhanced Wells (Firth)"
+
+cv_class <- bind_rows(res_orig, res_enh) %>%
+  relocate(Model, Fold) %>%
+  mutate(across(c(Threshold, Accuracy, Sensitivity, Specificity, PPV, NPV), as.numeric))
+
+cv_class_summary <- cv_class %>%
+  group_by(Model) %>%
+  summarise(
+    Mean_Threshold   = mean(Threshold, na.rm = TRUE),
+    Mean_Accuracy    = mean(Accuracy, na.rm = TRUE),
+    Mean_Sensitivity = mean(Sensitivity, na.rm = TRUE),
+    Mean_Specificity = mean(Specificity, na.rm = TRUE),
+    Mean_PPV         = mean(PPV, na.rm = TRUE),
+    Mean_NPV         = mean(NPV, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+kaggle_metrics_mean <- cv_class_summary %>%
+  select(Model, starts_with("Mean_")) %>%
+  pivot_longer(cols = -Model, names_to = "Metric", values_to = "Value") %>%
+  mutate(
+    Metric = sub("^Mean_", "", Metric),
+    Metric = case_when(
+      Metric == "Threshold"   ~ "Youden Threshold",
+      Metric == "Accuracy"    ~ "Accuracy",
+      Metric == "Sensitivity" ~ "Sensitivity",
+      Metric == "Specificity" ~ "Specificity",
+      Metric == "PPV"         ~ "PPV",
+      Metric == "NPV"         ~ "NPV",
+      TRUE ~ Metric
+    )
+  ) %>%
+  pivot_wider(names_from = Model, values_from = Value) %>%
+  rename(
+    Original = `Original Wells (Firth)`,
+    Enhanced = `Enhanced Wells (Firth)`
+  ) %>%
+  mutate(
+    Difference = Enhanced - Original,
+    across(c(Original, Enhanced, Difference), ~ round(.x, 4)),
+    Metric = factor(Metric, levels = c("Youden Threshold","Accuracy","Sensitivity","Specificity","PPV","NPV"))
+  ) %>%
+  arrange(Metric) %>%
+  select(Metric, Original, Enhanced, Difference)
+
+kaggle_metrics_mean %>%
+  kbl(
+    caption = "Repeated 10-fold CV (5 repeats): Mean Classification Metrics at Youden-Optimal Cutpoints",
+    col.names = c("Metric", "Original Wells (Firth)", "Enhanced Wells (Firth)", "Difference (Enhanced − Original)"),
+    align = "lccc",
+    format = "html"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) %>%
+  row_spec(0, bold = TRUE)
 ```
-
 
 **Method 3: Visualization of Comparison of the ROC Curves of the Two Models **
 
-The ROC curves for both the **Original Wells** and **Enhanced Wells** models are plotted and compared below. The diagonal dashed line represents the line of no discrimination (AUC = 0.5), indicating performance equivalent to random guessing. Both ROC curves lie well above this line, demonstrating that each model has meaningful discriminative ability. However, the Enhanced Wells model (depicted in purple) consistently outperforms the Original Wells model (in blue), as its ROC curve lies above the original across most thresholds. This observation is supported by the higher area under the curve (AUC) for the Enhanced Wells model (**0.877**) compared to the Original Wells model (**0.847**), reflecting superior overall classification performance. 
+One ROC curve was created for each model (original and enhanced). For each repeated 10-fold split, a Firth logistic regression was fit on the training data and then predicts probabilities for the testing data. These held-out predictions were then saved together with the subject's true outcome and a stable identifier (row number). Because the cross-validation was repeated 5 times, each patient was held out once per repeat and therefore received multiple out-of-fold predicted probabilities. Across 5 repeats, every patient appears in the test fold exactly once. These probabilities were then averaged for each patient to produce a single cross-validated predicted probability per patient. Using these pooled out-of-fold predictions and taking into account different thresholds, ROC curves and AUC values were computed for both models and plotted together. 
+
+The diagonal dashed line represents the line of no discrimination (AUC = 0.5), indicating performance equivalent to random guessing. Both ROC curves lie well above this line, demonstrating that each model has meaningful discriminative ability. The enhanced model is consistently better overall as the red curve is above the blue curve for most of the false-positive rate range. This observation is supported by the increase area under the curve (AUC) for the Enhanced model (0.8554577) compared to the Original model (0.8089022), supporting the prior results earlier that there is meaningful gain in discrimination from adding the two predictors when calculating the mean AUC values. 
+
+It is important to note that the AUC values reported earlier were mean AUCs averaged across the 50 held out folds. For the ROC plot below, AUC was instead recalculated using pooled out-of-fold predicted probabilities, where each patient’s out-of-fold predictions across repeats were averaged to yield one cross-validated probability per patient. As a result, the AUC values shown in the ROC figure may differ from the previously reported mean fold-level AUCs because they are based on a different (pooled) cross-validation summary approach.
 
 ```{r}
+set.seed(123)
+get_oof_preds <- function(train_idx, predictors) {
+  test_idx <- setdiff(seq_len(nrow(dat)), train_idx)
+
+  train <- dat[train_idx, , drop = FALSE]
+  test  <- dat[test_idx,  , drop = FALSE]
+
+  fit <- logistf(pe_status ~ ., data = train[, c("pe_status", predictors)])
+  p   <- predict(fit, newdata = test, type = "response")
+
+  data.frame(
+    row_id = test_idx,
+    y      = test$pe_status,
+    p      = as.numeric(p)
+  )
+}
+
+oof_orig <- bind_rows(lapply(folds, get_oof_preds, predictors = wells_components)) %>%
+  group_by(row_id) %>%
+  summarise(y = first(y), p = mean(p), .groups = "drop")
+
+oof_enh <- bind_rows(lapply(folds, get_oof_preds, predictors = enhanced_predictors)) %>%
+  group_by(row_id) %>%
+  summarise(y = first(y), p = mean(p), .groups = "drop")
+
+roc_original_cv <- roc(oof_orig$y, oof_orig$p, levels = c("0","1"), direction = "<", quiet = TRUE)
+roc_enhanced_cv <- roc(oof_enh$y,  oof_enh$p,  levels = c("0","1"), direction = "<", quiet = TRUE)
+
+cat("Pooled AUC (Original) =", as.numeric(auc(roc_original_cv)), "\n")
+cat("Pooled AUC (Enhanced) =", as.numeric(auc(roc_enhanced_cv)), "\n")
+
 ggplot() +
-  geom_line(aes(x = 1 - roc_original$specificities, 
-                y = roc_original$sensitivities, 
-                color = "Wells Original"), 
+  geom_line(aes(x = 1 - roc_original_cv$specificities,
+                y = roc_original_cv$sensitivities,
+                color = "Original Wells (Firth)"),
             linewidth = 1.2) +
-  geom_line(aes(x = 1 - roc_enhanced$specificities, 
-                y = roc_enhanced$sensitivities, 
-                color = "Wells Enhanced"), 
+  geom_line(aes(x = 1 - roc_enhanced_cv$specificities,
+                y = roc_enhanced_cv$sensitivities,
+                color = "Enhanced Wells (Firth)"),
             linewidth = 1.2) +
-  geom_abline(intercept = 0, slope = 1, linetype = "dashed", 
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed",
               color = "gray50", alpha = 0.7) +
-  
-  scale_color_manual(
-    name = "Models",
-    values = c("Wells Original" = "#2E86AB", "Wells Enhanced" = "#A23B72")
-  ) +
-  
   labs(
-    x = "1 - Specificity (False Positive Rate)",
+    x = "1 − Specificity (False Positive Rate)",
     y = "Sensitivity (True Positive Rate)",
-    title = "ROC Curve Comparison: Wells Original vs Enhanced Models",
-    subtitle = paste0("Original AUC: ", round(auc(roc_original), 3), 
-                     " | Enhanced AUC: ", round(auc(roc_enhanced), 3))
+    title = "ROC Curve Comparison (Pooled Out-of-Fold Predictions)",
+    subtitle = paste0(
+      "Original AUC: ", round(as.numeric(auc(roc_original_cv)), 3),
+      " | Enhanced AUC: ", round(as.numeric(auc(roc_enhanced_cv)), 3)
+    ),
+    color = "Models"
   ) +
-  
-  theme_minimal() +
-  theme(
-    plot.title = element_text(face = "bold", size = 14, hjust = 0.5),
-    plot.subtitle = element_text(size = 11, hjust = 0.5),
-    axis.title = element_text(face = "bold", size = 12),
-    axis.text = element_text(size = 10),
-    legend.title = element_text(face = "bold", size = 11),
-    legend.text = element_text(size = 10),
-    legend.position = "bottom",
-    panel.grid.major = element_line(color = "gray90"),
-    panel.grid.minor = element_blank(),
-    plot.background = element_rect(fill = "white", color = NA)
-  ) +
-  
   coord_equal() +
-  scale_x_continuous(limits = c(0, 1), expand = c(0, 0)) +
-  scale_y_continuous(limits = c(0, 1), expand = c(0, 0))
+  scale_x_continuous(limits = c(0,1), expand = c(0,0)) +
+  scale_y_continuous(limits = c(0,1), expand = c(0,0)) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
 ```
 
 ### Comparison of Calibration between 2 Models 
@@ -3944,23 +4105,51 @@ After establishing that the addition of the two predictors improved the discrimi
 
 **Method 1: Comparison of Brier Score of Calibration ** 
 
-The **Brier Score** was calculated for both the original and enhanced Firth logistic regression models to assess their **calibration performance**, which measures how well predicted probabilities align with the actual observed outcomes of pulmonary embolism. The Brier Score quantifies calibration by computing the **mean squared difference** between predicted probabilities and actual outcomes, where lower scores indicate that predictions are closer to the true values.
+The **Brier Score** was calculated for both the original and enhanced Firth logistic regression models to assess their **calibration performance**, which measures how well predicted probabilities align with the actual observed outcomes of pulmonary embolism. The Brier scores were computed from pooled out of fold predictions under the repeated 10-fold cross validation. Specifically, a Firth logistic regression model was trained on the training observations and predicted probabilities were generated for the held-out fold. This process was repeated 5 times across all folds, and the predicted probabilities for each patient were averaged across the folds in which they were held out to obtain a single cross-validated predicted probability per patient. The Brier score was compuated as the **mean squared error** between the predicted probabilites and the observed outcomes, where lower scores indicate that predictions are closer to the true values.
 
-When comparing the two models, the original Modified Wells model had a Brier Score of **0.1469**, whereas the enhanced model achieved a lower score of **0.1360**, reflecting an improvement of **0.0109**. Because a lower Brier Score represents better calibration, this result suggests that the enhanced model not only provides superior **classification performance** (as demonstrated by higher discrimination metrics) but also produces more reliable probability estimates of pulmonary embolism. These findings further justify the inclusion of the additional predictors, `positive_d_dimer` and `echo_rvsp_value` into the Modified Wells Score framework, enhancing both the model’s predictive accuracy and clinical reliability.
+When comparing the two models, the original Modified Wells model had a Brier Score of **0.1546**, whereas the enhanced model achieved a lower score of **0.1457**, reflecting an improvement of **5.72%**. Because a lower Brier Score represents better calibration, this result suggests that the enhanced model produces more reliable probability estimates of pulmonary embolism. These findings further justify the inclusion of the additional predictors, `positive_d_dimer` and `echo_rvsp_value` into the Modified Wells Score framework, enhancing both the model’s predictive accuracy and clinical reliability.
 
 ```{r}
-pe_status_numeric <- as.numeric(as.character(merged_data_no_covid$pe_status))
+set.seed(123)
 
-brier_original <- mean((predict(model_wells_original_firth, type = "response") - 
-                        pe_status_numeric)^2)
-brier_enhanced <- mean((predict(model_wells_enhanced_firth, type = "response") - 
-                       pe_status_numeric)^2)
+get_oof_preds <- function(train_idx, predictors) {
+  test_idx <- setdiff(seq_len(nrow(dat)), train_idx)
 
-cat("Brier Score - Original:", brier_original, "\n")
-cat("Brier Score - Enhanced:", brier_enhanced, "\n")
-cat("Brier Score Improvement:", brier_original - brier_enhanced, "\n")
+  train <- dat[train_idx, , drop = FALSE]
+  test  <- dat[test_idx,  , drop = FALSE]
+
+  fit <- logistf(pe_status ~ ., data = train[, c("pe_status", predictors)])
+  p   <- predict(fit, newdata = test, type = "response")
+
+  data.frame(
+    row_id = test_idx,
+    y      = test$pe_status,      
+    p      = as.numeric(p)        
+  )
+}
+
+oof_orig <- bind_rows(lapply(folds, get_oof_preds, predictors = wells_components)) %>%
+  group_by(row_id) %>%
+  summarise(y = first(y), p = mean(p), .groups = "drop")
+
+oof_enh <- bind_rows(lapply(folds, get_oof_preds, predictors = enhanced_predictors)) %>%
+  group_by(row_id) %>%
+  summarise(y = first(y), p = mean(p), .groups = "drop")
+
+y_num_orig <- as.numeric(as.character(oof_orig$y))
+y_num_enh  <- as.numeric(as.character(oof_enh$y))
+
+brier_orig <- mean((oof_orig$p - y_num_orig)^2)
+brier_enh  <- mean((oof_enh$p  - y_num_enh )^2)
+
+cat(sprintf("Pooled OOF Brier score (Original) = %.4f\n", brier_orig))
+cat(sprintf("Pooled OOF Brier score (Enhanced) = %.4f\n", brier_enh))
+cat(sprintf("ΔBrier (Enhanced − Original)      = %.4f\n", brier_enh - brier_orig))
+
+cat(sprintf("Relative Brier improvement = %.2f%%\n",
+            100 * (brier_orig - brier_enh) / brier_orig))
+
 ```
-
 **Method 2: Hosmer-Lemeshow Goodness of Fit Tests ** 
 
 Hosmer-Lemeshow goodness-of-fit tests were conducted for both the original and enhanced Firth logistic regression models to evaluate how well the predicted probabilities align with the actual occurrence of pulmonary embolism (PE). This test assesses model calibration by dividing the data into a specified number of bins and comparing the observed versus expected frequencies of the outcome. A higher p-value (typically > 0.05) indicates better model fit, suggesting that the model's predicted probabilities do not significantly deviate from the observed outcomes.
@@ -3970,8 +4159,9 @@ To explore the sensitivity of the test to bin size, a custom function was implem
 ```{r}
 test_bin_sizes <- function(bins_to_test) {
   results <- data.frame()
+  n <- length(pe_status_numeric)  
   
-  for(g in bins_to_test) {
+  for (g in bins_to_test) {
     hl_test <- tryCatch({
       hoslem.test(pe_status_numeric, yhat_original, g = g)
     }, warning = function(w) {
@@ -3980,7 +4170,7 @@ test_bin_sizes <- function(bins_to_test) {
       return(list(p.value = NA, statistic = NA, error = e$message))
     })
     
-    if(!is.na(hl_test$p.value)) {
+    if (!is.na(hl_test$p.value)) {
       obs_per_bin <- n / g
       results <- rbind(results, data.frame(
         Bins = g,
@@ -3999,11 +4189,11 @@ test_bin_sizes <- function(bins_to_test) {
       ))
     }
   }
+  
   return(results)
 }
-
 bin_test_results <- test_bin_sizes(3:15)
-print(bin_test_results)
+bin_test_results
 ```
 
 The Hosmer-Lemeshow goodness-of-fit test was conducted for both the original and enhanced Firth logistic regression models using a specified number of bins (g = 6) to assess model calibration. The original Modified Wells model demonstrated good fit, with a Hosmer-Lemeshow statistic of **7.32** and a p-value of **0.1195**. Similarly, the enhanced Modified Wells model also exhibited good fit, with a lower Hosmer-Lemeshow statistic of **5.21** and a higher p-value of **0.2662**. Since both p-values exceed the 0.05 threshold, there is no evidence of significant deviation from a good fit. The enhanced model shows slightly better calibration, as indicated by the lower HL statistic and higher p-value.
@@ -4130,50 +4320,17 @@ results_summary %>%
 --Leave off Here: November 11, 2025. Will continue further analysis later. -- 
 
 
-
-**Method 4: Calibration Intercept and Slope ** 
-
-The calibration of the two Wells Criteria models are tested depending on two metrics: 1. Intercept or whether the models are correct on average and 2. Slope: whether the predictions frm the models have the correct spread. 
-
-The intercept tests assess for systematic over or under prediction of the prediction as the ideal itnercept is 0. 
-
-The slope test assess whether the predicted probabilities increase or decreae at the correct rate as the true risk increases or dereases and that th epredictions are correctly scaeled where the ideal slope is 1. 
-
-```{r}
-calibration_intercept_slope_corrected <- function(actual, predicted, model_name) {
-  predicted_trimmed <- pmin(pmax(predicted, 0.001), 0.999)
-  fit_intercept <- glm(actual ~ 1, 
-                       offset = qlogis(predicted_trimmed), 
-                       family = binomial)
-  
-  logit_pred_centered <- qlogis(predicted_trimmed) - mean(qlogis(predicted_trimmed))
-  fit_slope <- glm(actual ~ logit_pred_centered, family = binomial)
-  
-  slope_coef <- coef(fit_slope)[2]
-  slope_se <- summary(fit_slope)$coefficients[2, 2]
-  
-  z_score <- (slope_coef - 1) / slope_se
-  slope_p_value <- 2 * pnorm(-abs(z_score))
-  
-  results <- data.frame(
-    Model = model_name,
-    Intercept = coef(fit_intercept)[1],
-    Intercept_p = summary(fit_intercept)$coefficients[1, 4],
-    Slope = slope_coef,
-    Slope_p = slope_p_value,  # Now testing slope = 1
-    Observations = length(actual)
-  )
-  
-  return(results)
-}
-calib_stats_corrected <- rbind(
-  calibration_intercept_slope_corrected(pe_status_numeric, yhat_original, "Original Wells"),
-  calibration_intercept_slope_corrected(pe_status_numeric, yhat_enhanced, "Enhanced Wells")
-)
-
-print(calib_stats_corrected)
-
 ```
+
+
+
+
+
+
+
+
+
+
 
 
 ### Extra Analysis: Comparison of All Possible Models 
@@ -4279,25 +4436,6 @@ ggplot(performance_comparison, aes(x = reorder(Model, LogLik_Improvement), y = L
        x = "Model", y = "Δ Log-Likelihood") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-```
-
-
-
-### Additional Model Diagnostics of the Final Chosen Model 
-
-**Method 1: ** Half Normal Plot: 
-
-The half-normal plot presented below is used to identify observations with high influence in the model. Influential points are those that exhibit both outlying values in the response variable (potential outliers) and unusual predictor values (high leverage). In the current model, two cases exhibit notably high leverage, indicating that their predictor values are substantially different from the rest of the dataset: patients 76 and 235. 
-
-```{r}
-```
-
-**Method 2: ** Plot of Cook's Distance 
-
-Show agains the against half normal quantiles
-
-```{r}
-
 ```
 
 
