@@ -4399,73 +4399,165 @@ model_summary %>%
 
 ```
 
-### Predictive Performance of all potential Models 
+### Predictive Performance of all Candidate Models 
 
-Discrimination, Classification, and Calibration metrics (Mean AUC, Out of fold AUC, Sensitivity, Specificity, Positive Predictive Value, and Negative Predictive Value) are compared between the 4 models. 
+To compare discrimination, classification, and calibration across the four candidate Firth logistic regression models, repeated stratified 10-fold cross-validation was used. The analysis dataset was split into 10 folds, and the procedure was repeated 5 times, yielding 50 out-of-sample (held-out) evaluations per model. In each evaluation, the model was fit on the training folds (9/10 of the data) and predicted probabilities were generated for the held-out fold (1/10 of the data). Fold-level AUC was computed from the held-out predictions, and classification metrics (accuracy, sensitivity, specificity, PPV, NPV) were computed on the held-out fold using a Youden-optimal threshold selected from the training-fold ROC curve. The reported classification and discrimination results represent the mean of each metric across the 50 held-out evaluations.
 
-
-To evaluate and compare the predictive discrimination of the original Modified Wells model and the enhanced model with two additional predictors, repeated stratified cross-validation was used. The analysis dataset was partitioned into 10 folds, and this procedure was repeated 5 times, yielding 50 train–test evaluations. In each evaluation, a Firth logistic regression model was fit on the training folds (9/10 of the data), predicted probabilities were generated for the held-out fold (1/10 of the data), and a test-fold AUC was computed from the ROC curve. This process was performed separately for the original and enhanced models, and the fold-wise AUC difference (enhanced − original) was calculated to quantify the incremental gain in discrimination. Finally, the mean and standard deviation of the AUC across all folds were summarized for each model and presented in a table.
-
+In addition, to summarize performance at the patient level across repeats, pooled out-of-fold predicted probabilities were constructed by collecting each patient’s out-of-fold predictions across repeats and averaging them to obtain one cross-validated probability per patient. These pooled predictions were then used to compute a pooled out-of-fold AUC (discrimination) and the Brier score (calibration), where lower Brier scores indicate predicted probabilities that are closer to the observed PE outcomes.
 
 ```{r}
-performance_results <- data.frame(
-  Model = character(),
-  AUC = numeric(),
-  Accuracy = numeric(),
-  Sensitivity = numeric(),
-  Specificity = numeric(),
-  PPV = numeric(),
-  NPV = numeric(),
-  stringsAsFactors = FALSE
+model_sets <- list(
+  `Model 1: Wells (7)`             = wells_pred,
+  `Model 2: Wells + D-dimer (8)`   = pred_plus_ddimer,
+  `Model 3: Wells + Echo RVSP (8)` = pred_plus_echo,
+  `Model 4: Wells + Both (9)`      = pred_full_two
 )
 
-for (model_name in names(fitted_models)) {
-    pred_probs <- predict(fitted_models[[model_name]], newdata = test_data, type = "response")
-  roc_obj <- roc(test_data$diabetes, pred_probs)
-  auc_value <- as.numeric(auc(roc_obj))
-  best_thresh <- coords(roc_obj, "best", ret = "threshold", best.method = "youden")$threshold
-  
-  pred_class <- factor(ifelse(pred_probs > best_thresh, "Yes", "No"), levels = c("No", "Yes"))
-  
-  cm <- confusionMatrix(pred_class, test_data$diabetes, positive = "Yes")
-  
-  performance_results <- rbind(performance_results, data.frame(
-    Model = model_name,
-    AUC = auc_value,
-    Accuracy = cm$overall["Accuracy"],
-    Sensitivity = cm$byClass["Sensitivity"],
-    Specificity = cm$byClass["Specificity"],
-    PPV = cm$byClass["Pos Pred Value"],
-    NPV = cm$byClass["Neg Pred Value"]
-  ))
+
+calc_metrics <- function(TP, FP, TN, FN) {
+  c(
+    Accuracy    = (TP + TN) / (TP + FP + TN + FN),
+    Sensitivity = ifelse(TP + FN == 0, NA, TP / (TP + FN)),
+    Specificity = ifelse(TN + FP == 0, NA, TN / (TN + FP)),
+    PPV         = ifelse(TP + FP == 0, NA, TP / (TP + FP)),
+    NPV         = ifelse(TN + FN == 0, NA, TN / (TN + FN))
+  )
 }
 
-performance_results <- performance_results %>%
-  mutate(across(where(is.numeric), round, 4))
+fit_firth <- function(train, predictors) {
+  logistf(
+    formula = as.formula(paste("pe_status ~", paste(predictors, collapse = " + "))),
+    data = train[, c("pe_status", predictors), drop = FALSE]
+  )
+}
 
-order_levels <- c(
-  "ADA_original",
-  "ADA_income_only",
-  "ADA_food_only",
-  "ADA_citizen_only",
-  "ADA_income_citizen",
-  "ADA_income_food",
-  "ADA_food_citizenship",
-  "ADA_income_citizen_food",
-  "ADA_full"
-)
+fold_auc <- function(train_idx, predictors) {
+  train <- dat[train_idx, , drop = FALSE]
+  test  <- dat[-train_idx, , drop = FALSE]
 
-performance_results <- performance_results %>%
-  mutate(Model = factor(Model, levels = order_levels)) %>%
-  arrange(Model)
-```
+  fit <- fit_firth(train, predictors)
+  p   <- predict(fit, newdata = test, type = "response")
 
-```{r}
-performance_results %>%
+  roc_obj <- roc(test$pe_status, p, levels = c("0","1"), direction = "<", quiet = TRUE)
+  as.numeric(auc(roc_obj))
+}
+
+fold_class_metrics <- function(train_idx, predictors) {
+  train <- dat[train_idx, , drop = FALSE]
+  test  <- dat[-train_idx, , drop = FALSE]
+
+  fit <- fit_firth(train, predictors)
+
+  p_train <- predict(fit, newdata = train, type = "response")
+  p_test  <- predict(fit, newdata = test,  type = "response")
+
+  roc_train <- roc(train$pe_status, p_train, levels = c("0","1"), direction = "<", quiet = TRUE)
+  thr <- coords(
+    roc_train, x = "best", best.method = "youden",
+    ret = "threshold", transpose = FALSE
+  )[["threshold"]]
+
+  pred_test <- factor(ifelse(p_test >= thr, "1", "0"), levels = c("0","1"))
+  y <- factor(test$pe_status, levels = c("0","1"))
+
+  TP <- sum(pred_test == "1" & y == "1")
+  FP <- sum(pred_test == "1" & y == "0")
+  TN <- sum(pred_test == "0" & y == "0")
+  FN <- sum(pred_test == "0" & y == "1")
+
+  c(Threshold = thr, calc_metrics(TP, FP, TN, FN))
+}
+
+get_oof_preds <- function(train_idx, predictors) {
+  test_idx <- setdiff(seq_len(nrow(dat)), train_idx)
+
+  train <- dat[train_idx, , drop = FALSE]
+  test  <- dat[test_idx,  , drop = FALSE]
+
+  fit <- fit_firth(train, predictors)
+  p   <- predict(fit, newdata = test, type = "response")
+
+  data.frame(
+    row_id = test_idx,
+    y      = test$pe_status,
+    p      = as.numeric(p)
+  )
+}
+
+pooled_oof <- function(predictors) {
+  bind_rows(lapply(folds, get_oof_preds, predictors = predictors)) %>%
+    group_by(row_id) %>%
+    summarise(
+      y = first(y),
+      p = mean(p),
+      .groups = "drop"
+    )
+}
+
+results_list <- imap(model_sets, function(preds, model_name) {
+
+  auc_vec <- sapply(folds, fold_auc, predictors = preds)
+  mean_auc <- mean(auc_vec, na.rm = TRUE)
+
+  class_mat <- t(sapply(folds, fold_class_metrics, predictors = preds))
+  class_df  <- as.data.frame(class_mat) %>%
+    mutate(across(everything(), as.numeric))
+
+  mean_acc  <- mean(class_df$Accuracy,    na.rm = TRUE)
+  mean_sens <- mean(class_df$Sensitivity, na.rm = TRUE)
+  mean_spec <- mean(class_df$Specificity, na.rm = TRUE)
+  mean_ppv  <- mean(class_df$PPV,         na.rm = TRUE)
+  mean_npv  <- mean(class_df$NPV,         na.rm = TRUE)
+
+  oof <- pooled_oof(preds)
+
+  roc_oof <- roc(oof$y, oof$p, levels = c("0","1"), direction = "<", quiet = TRUE)
+  pooled_auc <- as.numeric(auc(roc_oof))
+
+  y_num <- as.numeric(as.character(oof$y))   # "0"/"1" -> 0/1
+  brier <- mean((oof$p - y_num)^2, na.rm = TRUE)
+
+  tibble(
+    Model = model_name,
+    AUC_mean_CV50 = mean_auc,
+    AUC_pooled_OOF = pooled_auc,
+    Accuracy_mean_CV50 = mean_acc,
+    Sensitivity_mean_CV50 = mean_sens,
+    Specificity_mean_CV50 = mean_spec,
+    PPV_mean_CV50 = mean_ppv,
+    NPV_mean_CV50 = mean_npv,
+    Brier_pooled_OOF = brier
+  )
+})
+
+performance_table <- bind_rows(results_list) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 4))) %>%
+  mutate(
+    Delta_AUC_mean_CV50      = round(AUC_mean_CV50      - AUC_mean_CV50[Model == "Model 1: Wells (7)"], 4),
+    Delta_AUC_pooled_OOF     = round(AUC_pooled_OOF     - AUC_pooled_OOF[Model == "Model 1: Wells (7)"], 4),
+    Delta_Accuracy_mean_CV50 = round(Accuracy_mean_CV50 - Accuracy_mean_CV50[Model == "Model 1: Wells (7)"], 4),
+    Delta_Sens_mean_CV50     = round(Sensitivity_mean_CV50 - Sensitivity_mean_CV50[Model == "Model 1: Wells (7)"], 4),
+    Delta_Spec_mean_CV50     = round(Specificity_mean_CV50 - Specificity_mean_CV50[Model == "Model 1: Wells (7)"], 4),
+    Delta_PPV_mean_CV50      = round(PPV_mean_CV50      - PPV_mean_CV50[Model == "Model 1: Wells (7)"], 4),
+    Delta_NPV_mean_CV50      = round(NPV_mean_CV50      - NPV_mean_CV50[Model == "Model 1: Wells (7)"], 4),
+    Delta_Brier_pooled_OOF   = round(Brier_pooled_OOF   - Brier_pooled_OOF[Model == "Model 1: Wells (7)"], 4)
+  )
+
+
+performance_table %>%
   kbl(
-    caption = "Comparison of Predictive Performance Metrics Across Candidate Models (Test Set)",
-    col.names = c("Model", "AUC", "Accuracy", "Sensitivity", "Specificity", "PPV", "NPV"),
-    align = "lcccccc",
+    caption = "Repeated 10-fold CV (5 repeats): Predictive Performance Across Candidate Firth Models",
+    col.names = c(
+      "Model",
+      "AUC (mean CV50)", "AUC (pooled OOF)",
+      "Accuracy (mean CV50)", "Sensitivity (mean CV50)", "Specificity (mean CV50)",
+      "PPV (mean CV50)", "NPV (mean CV50)",
+      "Brier (pooled OOF)",
+      "ΔAUC (mean)", "ΔAUC (pooled)",
+      "ΔAcc", "ΔSens", "ΔSpec", "ΔPPV", "ΔNPV",
+      "ΔBrier"
+    ),
+    align = "lccccccccccccccccc",
     format = "html"
   ) %>%
   kable_styling(
@@ -4474,39 +4566,66 @@ performance_results %>%
     position = "center"
   ) %>%
   row_spec(0, bold = TRUE)
+
 ```
 
-Combining Two Tables Together: 
+
+Combining the 2 Tables Together: Displaying both Model Fit and Predictive Performance Metrics across all 4 Candidate Models
 
 ```{r}
-combined_table <- left_join(model_summary, performance_results, by = "Model") %>%
-  mutate(across(where(is.numeric), round, 4)) %>%
+combined_4models <- model_summary %>%
   select(
     Model,
-    AIC, BIC, McFadden_R2, Delta_AIC, Delta_BIC, Delta_R2,
-    AUC, Accuracy, Sensitivity, Specificity, PPV, NPV
-  )
-
-auc_baseline <- combined_table$AUC[combined_table$Model == "ADA_original"]
-
-combined_table <- combined_table %>%
+    AIC_pen, BIC_pen, Deviance_pen,
+    Delta_AIC_pen, Delta_BIC_pen, Delta_Deviance_pen
+  ) %>%
+  left_join(
+    performance_table %>%
+      select(
+        Model,
+        AUC_mean_CV50, AUC_pooled_OOF,
+        Accuracy_mean_CV50, Sensitivity_mean_CV50, Specificity_mean_CV50,
+        PPV_mean_CV50, NPV_mean_CV50,
+        Brier_pooled_OOF
+      ),
+    by = "Model"
+  ) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 4))) %>%
+  rename(
+    `Penalized AIC` = AIC_pen,
+    `Penalized BIC` = BIC_pen,
+    `Penalized deviance` = Deviance_pen,
+    `ΔAIC` = Delta_AIC_pen,
+    `ΔBIC` = Delta_BIC_pen,
+    `ΔPenalized deviance` = Delta_Deviance_pen,
+    `AUC (mean CV50)` = AUC_mean_CV50,
+    `AUC (pooled OOF)` = AUC_pooled_OOF,
+    `Accuracy (mean CV50)` = Accuracy_mean_CV50,
+    `Sensitivity (mean CV50)` = Sensitivity_mean_CV50,
+    `Specificity (mean CV50)` = Specificity_mean_CV50,
+    `PPV (mean CV50)` = PPV_mean_CV50,
+    `NPV (mean CV50)` = NPV_mean_CV50,
+    `Brier (pooled OOF)` = Brier_pooled_OOF
+  ) %>%
   mutate(
-    Model = ifelse(
-      AUC > auc_baseline,
-      paste0("<span style='color:red; font-weight:bold;'>", Model, "</span>"),
-      paste0("<span style='color:black;'>", Model, "</span>")
+    Model = factor(
+      Model,
+      levels = c(
+        "Model 1: Wells (7)",
+        "Model 2: Wells + D-dimer (8)",
+        "Model 3: Wells + Echo RVSP (8)",
+        "Model 4: Wells + Both (9)"
+      )
     )
-  )
+  ) %>%
+  arrange(Model)
 
-combined_table %>%
+align_str <- paste0("l", paste(rep("c", ncol(combined_4models) - 1), collapse = ""))
+
+combined_4models %>%
   kbl(
-    escape = FALSE,  
-    caption = "Combined Comparison of Model Fit and Predictive Performance Metrics Across All Candidate Models",
-    col.names = c(
-      "Model", "AIC", "BIC", "McFadden’s R²", "ΔAIC", "ΔBIC", "ΔR²",
-      "AUC", "Accuracy", "Sensitivity", "Specificity", "PPV", "NPV"
-    ),
-    align = "lccccccccccc",
+    caption = "Combined Comparison of Penalized Fit, Discrimination, Classification, and Calibration Metrics Across the 4 Candidate Firth Models",
+    align = align_str,
     format = "html"
   ) %>%
   kable_styling(
@@ -4514,70 +4633,41 @@ combined_table %>%
     full_width = FALSE,
     position = "center"
   ) %>%
+  add_header_above(
+    c(
+      " " = 1,
+      "Model Fit Metrics" = 6,
+      "Predictive / Calibration Metrics" = 8
+    ),
+    bold = TRUE
+  ) %>%
   row_spec(0, bold = TRUE)
+
 ```
-
-For better visibility in the final report, the absolute values of AIC, BIC, and McFadden’s R squared will not be displayed.
-
 
 
 **Table: Comparison of Model Fit and Predictive Performance ** 
 
-The table below presents the comparative model fit and predictive performance of all candidate logistic regression models. The original ADA model served as the baseline, with ΔAIC and ΔBIC values calculated relative to it. Across all enhanced models, negative ΔAIC values indicate improved model fit compared to the ADA baseline. Considering both fit and parsimony, the results of AIC, BIC, and McFadden’s R² collectively suggest that the ADA + income_poverty_ratio + citizenship_status + food_insecurity model provides the most balanced performance among all candidates. This model achieved the largest reduction in AIC (ΔAIC = −25.349) and a modest improvement in McFadden’s R² (ΔR² = +0.0047), indicating better explanatory power relative to the original ADA model. Although its BIC increased slightly (ΔBIC = +3.064), this change is minimal compared to the full enhanced model (14 predictors), which showed a ΔBIC of +29.555. Therefore, the ADA + income_poverty_ratio + citizenship_status + food_insecurity configuration represents the most parsimonious and best-fitting option among the evaluated candidate models.
+The table below compares penalized model fit and out-of-sample predictive performance across four candidate Firth logistic regression models. The Original Modified Wells model (Model 1) served as the baseline, and ΔAIC, ΔBIC, and ΔPenalized Deviance were computed relative to Model 1. For these fit metrics, negative Δ values indicate improved fit compared with the baseline, while positive Δ values indicate worse fit.
 
-In terms of predictive performance, all models demonstrated strong discrimination, with AUC values exceeding 0.80. The ADA + food_insecurity model achieved the highest AUC (0.8077), followed closely by ADA + food_insecurity + citizenship_status (AUC = 0.8068) and ADA + income_poverty_ratio + food_insecurity (AUC = 0.8066). These marginal increases (ΔAUC < 0.003) indicate that including select socioeconomic and social determinant variables slightly enhances discrimination over the original ADA model (AUC = 0.8057). Sensitivity ranged from 0.7869 to 0.8714, with higher sensitivity generally offset by small reductions in specificity. Accuracy remained consistent (0.6466–0.7063), and negative predictive values (NPV > 0.95) confirmed the models’ reliability in identifying non-diabetic individuals. However, positive predictive values (PPV < 0.30) were uniformly low, reflecting the relatively low prevalence of diabetes in the dataset.
+**Model fit (penalized likelihood)**: 
+Overall, Model 4 (Wells + `positive_d_dimer` + `echo_rvsp_value`) achieved the strongest improvement in penalized likelihood fit, with the largest reductions in **AIC (ΔAIC = −26.6026)** and penalized deviance **(ΔDeviance = −30.6026)**. However, because BIC penalizes model complexity more heavily, Model 3 (Wells + `echo_rvsp_value`) provided the best BIC-based trade-off between fit and parsimony **(ΔBIC = −20.1498)** while using one fewer predictor than Model 4. In contrast, Model 2 (Wells + `positive_d_dimer`) showed only a small AIC improvement **(ΔAIC = −1.3444)** and actually worsened BIC **(ΔBIC = +2.5334)**, suggesting limited added value after accounting for complexity.
 
-```{r}
-combined_table <- left_join(model_summary, performance_results, by = "Model") %>%
-  mutate(across(where(is.numeric), round, 4)) %>%
-  select(
-    Model,
-    Delta_AIC, Delta_BIC, Delta_R2,  
-    AUC, Accuracy, Sensitivity, Specificity, PPV, NPV
-  )
+**Discrimination, classification, and calibration:**
+All models demonstrated strong discrimination **(AUC > 0.80)**. The best discrimination was achieved by Model 3 (Wells + `echo_rvsp_value`), which had the **highest mean fold-level AUC (0.8586)** and the **highest pooled out-of-fold AUC (0.8572)**. Model 4 (full model) performed similarly but slightly lower on AUC **(mean AUC = 0.8570, pooled OOF AUC = 0.8555)**. These results indicate that adding `echo_rvsp_value` provides the largest gain in discriminative ability, whereas adding `positive_d_dimer` alone (Model 2) yields AUC values that are similar to (or slightly lower than) the baseline model.
 
-auc_baseline <- combined_table$AUC[combined_table$Model == "ADA_original"]
-combined_table <- combined_table %>%
-  mutate(
-    Model = ifelse(
-      AUC > auc_baseline,
-      paste0("<span style='color:red; font-weight:bold;'>", Model, "</span>"),
-      paste0("<span style='color:black;'>", Model, "</span>")
-    ),
-    AUC = ifelse(
-      AUC > auc_baseline,
-      paste0("<span style='color:red; font-weight:bold;'>", AUC, "</span>"),
-      as.character(AUC)
-    )
-  )
+At the Youden-optimal cutpoints, models with `echo_rvsp_value` (Models 3 and 4) achieved **higher sensitivity (0.7235 and 0.7141, respectively)** with a modest trade-off in **specificity (0.8329 and 0.8491, respectively)**. Accuracy was broadly similar across models **(≈0.7580–0.7849)**. For calibration, the **pooled OOF Brier score was lowest (best) for Model 4 (0.1457)**, with Model 3 close behind **(0.1463)**, indicating that both models produce probability estimates that align reasonably well with observed outcomes. PPV values are similar across models  **(≈0.8060 - 0.8472)**. NPV values are also similar across models **(≈0.7287-0.7739)**. 
 
-combined_table %>%
-  kbl(
-    escape = FALSE, 
-    caption = "Comparison of Model Fit (ΔAIC, ΔBIC, ΔR²) and Predictive Performance Metrics Across All Candidate Models",
-    col.names = c(
-      "Model", "ΔAIC", "ΔBIC", "ΔR²",
-      "AUC", "Accuracy", "Sensitivity", "Specificity", "PPV", "NPV"
-    ),
-    align = "lcccccccc",
-    format = "html"
-  ) %>%
-  kable_styling(
-    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
-    full_width = FALSE,
-    position = "center"
-  ) %>%
-  row_spec(0, bold = TRUE)
-```
+Taken together, Model 3 (Wells + `echo_rvsp_value`) appears to be the most parsimonious option, showing the strongest discrimination (highest AUC values), the greatest improvement in BIC, and the highest sensitivity. In contrast, Model 4 (Wells +`positive_d_dimer` + `echo_rvsp_value`) provides the best overall penalized model fit (lowest AIC and penalized deviance) and slightly better calibration (lowest Brier score).
 
-**Figure: Trade-Off between Model Fit (Caption: Trade-off between Model Fit (ΔAIC) and Predictive Discrimination (AUC) for all 9 Models
+**Figure: Trade-Off between Model Fit (Caption: Trade-off between Model Fit (ΔBIC) and Predictive Discrimination (AUC) for all 9 Models** 
 
-Remarks: In Figure 2, the red dashed lines represent the ADA baseline model’s fit (ΔAIC = 0, vertical) and discrimination (AUC = 0.8057, horizontal). Models located on the left of the vertical line demonstrate improved fit (lower AIC) relative to the ADA model, while models above the horizontal line exhibit better predictive discrimination (higher AUC).
+In this figure, the red dashed lines represent the Original Modified Wells model’s fit (ΔAIC = 0, vertical) and discrimination (Mean AUC = 0.8057, horizontal). Models located on the left of the vertical line demonstrate improved fit (lower AIC) relative to the ADA model, while models above the horizontal line exhibit better predictive discrimination (higher AUC).
 
-The graph illustrates the trade-off between model fit (ΔAIC) and predictive discrimination (AUC) across the nine candidate models, including the original ADA model, the full enhanced model (14 predictors), and the subset models incorporating the three most significant predictors. Each point represents a distinct model, with color used to differentiate them. The ADA + income_poverty_ratio + citizenship_status + food_insecurity model (purple) is positioned farthest to the left and slightly above the ADA baseline (red dashed lines), indicating both a substantially improved model fit (lowest ΔAIC) and marginally higher discriminative ability. This visual pattern supports the conclusions from Table 3, confirming that this model achieves the best balance between improved fit and maintained predictive discrimination relative to the original ADA model.
+The graph illustrates the trade-off between model fit (ΔBIC) and predictive discrimination (AUC) across the nine candidate models, including the original ADA model, the full enhanced model (14 predictors), and the subset models incorporating the three most significant predictors. Each point represents a distinct model, with color used to differentiate them. The ADA + income_poverty_ratio + citizenship_status + food_insecurity model (purple) is positioned farthest to the left and slightly above the ADA baseline (red dashed lines), indicating both a substantially improved model fit (lowest ΔAIC) and marginally higher discriminative ability. This visual pattern supports the conclusions from Table 3, confirming that this model achieves the best balance between improved fit and maintained predictive discrimination relative to the original ADA model.
 
 ```{r}
-plot_data <- combined_table %>%
+plot_data <- combined_4models %>%
   mutate(
     Model = gsub("<.*?>", "", Model), 
     AUC = gsub("<.*?>", "", AUC),      
@@ -4638,11 +4728,6 @@ ggplot(plot_data, aes(x = Delta_AIC, y = AUC, color = Model)) +
 **Conclusion: ** 
 
 Overall, incorporating select socioeconomic, behavioral, and social determinant predictors (particularly food_insecurity, income_poverty_ratio, and citizenship_status that proved to be significant predictors of diabetes in earlier analysis) enhanced model fit as evidenced by improved AIC and pseudo-R² values, without significantly reducing classifcation performance. Although none of the expanded models substantially outperform the ADA baseline in out-of-sample classification performance, the improvements in model fit are statistically meaningful. Specifically, the ADA + income_poverty_ratio + citizenship_status + food_insecurity model achieved the strongest overall fit (ΔAIC = −25.35; ΔR² = +0.0047) while maintaining comparable classification metrics (AUC = 0.8060 vs 0.8057, Accuracy = 0.6728 vs 0.6840, Sensitivity = 0.8330 vs 0.8196, Specificity = 0.6477 vs 0.6628). Taken together, this model offers the best balance between improved fit, predictive stability, and parsimony, supporting its selection as the most effective enhancement to the ADA Diabetes Risk Test.
-
-
-
-
-
 
 
 
