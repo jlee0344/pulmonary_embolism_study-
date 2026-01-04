@@ -3676,7 +3676,7 @@ The **secondary research question** in this study is as follows:
 From the first research question, we identified the most significant predictors of pulmonary embolism as:  
 `dvt_in_lower_extremity`, `echo_rvsp_value`, and `positive_d_dimer`.  
 
-In this part of the analysis, we will evaluate whether incorporating these significant variables into the current **Modified Wells Scoring System** meaningfully improves its overall performance in terms of **model fit** and **predictive performance**. Model fit was assessed using AIC, BIC, and McFadden’s pseudo R², while predictive performance was evaluated in terms of both discrimination (Area Under the ROC Curve, AUC),  classification accuracy (sensitivity, specificity, PPV, NPV, and overall accuracy), and calibration performance (how well the predicted probabilities match real world outcome frequencies). The analysis also aimed to identify the most parsimonious subset of these additional predictors that provides the optimal balance between model fit, predictive performance, and simplicity for practical screening for pulmonary embolism. 
+In this part of the analysis, we will evaluate whether incorporating these significant variables into the current **Modified Wells Scoring System** meaningfully improves its overall performance in terms of **model fit** and **predictive performance**. Model fit was assessed using penalized AIC, penalized BIC, and penalized deviance, while predictive performance was evaluated in terms of both discrimination (Area Under the ROC Curve, AUC),  classification accuracy (sensitivity, specificity, PPV, NPV, and overall accuracy), and calibration performance (how well the predicted probabilities match real world outcome frequencies). The analysis also aimed to identify the most parsimonious subset of these additional predictors that provides the optimal balance between model fit, predictive performance, and simplicity for practical screening for pulmonary embolism. 
 
 **Original Variables in the Modified Wells Scoring System: **  
 
@@ -3785,7 +3785,7 @@ cat(sprintf("Penalized LRT: χ²(%d) = %.4f, p = %.9f\n",
             df_diff, lr_stat, p_value))
 ```
 
-### Statistical Comparison: Model Selection Criteria: Penalized Log-likelihood, Penalized Deviance, AIC, BIC, McFadden-like Pseudo R² value
+### Statistical Comparison: Model Selection Criteria: Penalized Log-likelihood, Penalized Deviance, AIC, BIC
 
 **Model Selection Criteria #1: Penalized Log-Likelihood and Penalized Deviance ** 
 
@@ -3847,7 +3847,6 @@ model_comparison <- data.frame(
 
 print(model_comparison)
 ```
-
 
 ### Comparison of Predictive Performance between 2 Models 
 
@@ -4105,9 +4104,9 @@ After establishing that the addition of the two predictors improved the discrimi
 
 **Method 1: Comparison of Brier Score of Calibration ** 
 
-The **Brier Score** was calculated for both the original and enhanced Firth logistic regression models to assess their **calibration performance**, which measures how well predicted probabilities align with the actual observed outcomes of pulmonary embolism. The Brier scores were computed from pooled out of fold predictions under the repeated 10-fold cross validation. Specifically, a Firth logistic regression model was trained on the training observations and predicted probabilities were generated for the held-out fold. This process was repeated 5 times across all folds, and the predicted probabilities for each patient were averaged across the folds in which they were held out to obtain a single cross-validated predicted probability per patient. The Brier score was compuated as the **mean squared error** between the predicted probabilites and the observed outcomes, where lower scores indicate that predictions are closer to the true values.
+The **Brier score** was computed for both the original and enhanced Firth logistic regression models to evaluate calibration or how closely the predicted probabilities of pulmonary embolism (PE) match the observed PE outcomes. Brier scores were calculated using **pooled out-of-fold predictions** from the repeated 10-fold cross-validation procedure. In each split, the Firth model was fit on the training folds and predicted probabilities were generated for the held-out fold. Because cross-validation was repeated 5 times, each patient contributed multiple out-of-fold predictions. These probabilities were then **averaged within patient** to obtain a single cross-validated predicted probability per individual. The Brier score was then computed as the mean squared error between these predicted probabilities and the observed outcomes (0/1), where lower values indicate better-calibrated and more accurate probability estimates.
 
-When comparing the two models, the original Modified Wells model had a Brier Score of **0.1546**, whereas the enhanced model achieved a lower score of **0.1457**, reflecting an improvement of **5.72%**. Because a lower Brier Score represents better calibration, this result suggests that the enhanced model produces more reliable probability estimates of pulmonary embolism. These findings further justify the inclusion of the additional predictors, `positive_d_dimer` and `echo_rvsp_value` into the Modified Wells Score framework, enhancing both the model’s predictive accuracy and clinical reliability.
+The original Modified Wells model produced a Brier score of **0.1546**, while the enhanced model achieved a lower Brier score of **0.1457**, corresponding to a **5.72% reduction**. This indicates that the enhanced model yields probability estimates that are, on average, closer to the true PE outcomes and therefore **better calibrated**. Together with the observed gains in discrimination, these results support including `positive_d_dimer` and `echo_rvsp_value` as additions to the Modified Wells framework to improve the model’s overall predictive performance and clinical usefulness.
 
 ```{r}
 set.seed(123)
@@ -4150,322 +4149,1108 @@ cat(sprintf("Relative Brier improvement = %.2f%%\n",
             100 * (brier_orig - brier_enh) / brier_orig))
 
 ```
-**Method 2: Hosmer-Lemeshow Goodness of Fit Tests ** 
 
-Hosmer-Lemeshow goodness-of-fit tests were conducted for both the original and enhanced Firth logistic regression models to evaluate how well the predicted probabilities align with the actual occurrence of pulmonary embolism (PE). This test assesses model calibration by dividing the data into a specified number of bins and comparing the observed versus expected frequencies of the outcome. A higher p-value (typically > 0.05) indicates better model fit, suggesting that the model's predicted probabilities do not significantly deviate from the observed outcomes.
+**Method 2: Calibration Plot ** 
 
-To explore the sensitivity of the test to bin size, a custom function was implemented to iteratively perform the Hosmer-Lemeshow test on only the original Firth logistic model across a range of bin sizes (from 3 to 15). The results show that the test was successfully executed only for bin sizes g = 3 to 6, and in all these cases, the p-values were above 0.05, indicating a good fit to the data. Furthermore, the corresponding HL statistics ranged from 1.09 to 7.33, which are relatively low values, further supporting the adequacy of model calibration. These findings suggest that both the original and enhanced models demonstrate a reasonable agreement between predicted and observed outcomes within the bin ranges where the test was valid.
+To visually compare calibration between the original and enhanced Firth logistic regression models, a calibration plot was generated using pooled out-of-fold (cross-validated) predicted probabilities. Patients were grouped into 10 equal-sized bins (deciles) based on predicted risk. Within each bin, the mean predicted probability was plotted against the observed event rate (proportion with PE). The dashed 45° line represents perfect calibration, where predicted risk equals observed risk; points above this line indicate underestimation (observed > predicted), whereas points below indicate overestimation (observed < predicted).
 
-```{r}
-test_bin_sizes <- function(bins_to_test) {
-  results <- data.frame()
-  n <- length(pe_status_numeric)  
-  
-  for (g in bins_to_test) {
-    hl_test <- tryCatch({
-      hoslem.test(pe_status_numeric, yhat_original, g = g)
-    }, warning = function(w) {
-      return(list(p.value = NA, statistic = NA, warning = w$message))
-    }, error = function(e) {
-      return(list(p.value = NA, statistic = NA, error = e$message))
-    })
-    
-    if (!is.na(hl_test$p.value)) {
-      obs_per_bin <- n / g
-      results <- rbind(results, data.frame(
-        Bins = g,
-        Observations_Per_Bin = obs_per_bin,
-        HL_Statistic = hl_test$statistic,
-        P_Value = hl_test$p.value,
-        Status = "Success"
-      ))
-    } else {
-      results <- rbind(results, data.frame(
-        Bins = g,
-        Observations_Per_Bin = n / g,
-        HL_Statistic = NA,
-        P_Value = NA,
-        Status = "Failed"
-      ))
-    }
-  }
-  
-  return(results)
-}
-bin_test_results <- test_bin_sizes(3:15)
-bin_test_results
-```
+Upon examining the plot, the red line representing the Enhanced Wells model closely follows the diagonal across most of the risk levels, suggesting good calibration. For example, when the model predicts roughly a 23% risk, the actual observed risk is also approximately 23%, as evidenced by the curve’s proximity to the ideal line. Across most risk ranges, the enhanced model maintains this alignment, with only a slight underestimation at higher probabilities and slight overestimation in the lower probabilities. 
 
-The Hosmer-Lemeshow goodness-of-fit test was conducted for both the original and enhanced Firth logistic regression models using a specified number of bins (g = 6) to assess model calibration. The original Modified Wells model demonstrated good fit, with a Hosmer-Lemeshow statistic of **7.32** and a p-value of **0.1195**. Similarly, the enhanced Modified Wells model also exhibited good fit, with a lower Hosmer-Lemeshow statistic of **5.21** and a higher p-value of **0.2662**. Since both p-values exceed the 0.05 threshold, there is no evidence of significant deviation from a good fit. The enhanced model shows slightly better calibration, as indicated by the lower HL statistic and higher p-value.
+In contrast, the blue line representing the Original Wells model shows more pronounced deviations from the ideal diagnoal line. Notably, at a predicted probability of around 28%, the observed risk increases to around 63%, indicating that the model underestimates risk in this region. Conversely, at a predicted probability of about 16%, the observed risk peaks at 0%, suggesting overestimation at specific risk levels.
+
+In summary, the calibration plot clearly demonstrates that the Enhanced Wells model (red) provides superior calibration, as its predictions more closely align with the observed outcomes compared to the Original Wells model (blue).
 
 ```{r}
-yhat_original <- as.numeric(predict(model_wells_original_firth, type = "response"))
-yhat_enhanced <- as.numeric(predict(model_wells_enhanced_firth, type = "response"))
-
-hl_original <- hoslem.test(pe_status_numeric, yhat_original, g = 6)
-hl_enhanced <- hoslem.test(pe_status_numeric, yhat_enhanced, g = 6)
-```
-
-```{r}
-hl_original
-```
-
-```{r}
-hl_enhanced
-```
-
-**Method 3: Calibration Plot ** 
-
-To visually compare the calibration of the original and enhanced Firth logistic regression models, a calibration plot was generated. Patients were grouped into six equally sized bins based on their predicted probabilities of developing pulmonary embolism (PE). For each bin, the average predicted probability and the actual observed proportion of patients with PE were calculated. These values were then plotted and connected to form the calibration curves. In a perfectly calibrated model, the curve would lie exactly along the diagonal dashed line, where predicted risk equals observed risk. Deviations above this line indicate the model is underestimating the true risk (observed > predicted), while deviations below indicate overestimation.
-
-Upon examining the plot, the blue line representing the Enhanced Wells model closely follows the diagonal across all risk levels, suggesting good calibration. For example, when the model predicts a 30% risk, the actual observed risk is also approximately 30%, as evidenced by the curve’s proximity to the ideal line. Across most risk ranges, the enhanced model maintains this alignment, with only a slight underestimation at higher probabilities.For instance, at a predicted risk of 75%, the observed risk is around 78%.
-
-In contrast, the red line representing the Original Wells model shows more pronounced deviations from the ideal diagnoal line. Notably, at a predicted probability of around 50%, the observed risk drops to approximately 37.5%, indicating that the model overestimates risk in this region. Conversely, at a predicted probability of about 75%, the observed risk peaks at nearly 100%, suggesting underestimation at higher risk levels.
-
-In summary, the calibration plot clearly demonstrates that the Enhanced Wells model (blue) provides superior calibration, as its predictions more closely align with the observed outcomes compared to the Original Wells model (red).
-
-```{r}
-calibration <- function(actual, predicted, model_name, n_bins = 6) {
-  min_val <- min(predicted, na.rm = TRUE)
-  max_val <- max(predicted, na.rm = TRUE)
-  
-  bins <- cut(predicted, 
-              breaks = seq(min_val, max_val, length.out = n_bins + 1),
-              include.lowest = TRUE)
-  
-  data.frame(
-    Model = model_name,
-    Predicted = tapply(predicted, bins, mean, na.rm = TRUE),
-    Observed = tapply(actual, bins, mean, na.rm = TRUE)
-  )
+make_calib_df <- function(oof, model_name, n_bins = 10) {
+  oof %>%
+    mutate(
+      Model = model_name,
+      y_num = as.numeric(as.character(y))
+    ) %>%
+    mutate(bin = ntile(p, n_bins)) %>%
+    group_by(Model, bin) %>%
+    summarise(
+      mean_pred = mean(p, na.rm = TRUE),
+      obs_rate  = mean(y_num, na.rm = TRUE),
+      n         = n(),
+      .groups   = "drop"
+    )
 }
 
-calib_data <- rbind(
-  calibration(pe_status_numeric, yhat_original, "Original Wells"),
-  calibration(pe_status_numeric, yhat_enhanced, "Enhanced Wells")
-)
+calib_orig <- make_calib_df(oof_orig, "Original Wells (Firth)", n_bins = 10)
+calib_enh  <- make_calib_df(oof_enh,  "Enhanced Wells (Firth)", n_bins = 10)
 
-calib_data <- calib_data[complete.cases(calib_data), ]
+calib_df <- bind_rows(calib_orig, calib_enh)
 
-ggplot(calib_data, aes(x = Predicted, y = Observed, color = Model)) +
-  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray", size = 1) +
-  geom_point(size = 3) +
-  geom_line(size = 1) +
-  labs(title = "Calibration: Original vs Enhanced Wells Criteria",
-       x = "Predicted Probability",
-       y = "Observed Proportion",
-       caption = paste("Brier Scores: Original =", brier_original, 
-                       "Enhanced =", brier_enhanced)) +
-  scale_color_manual(values = c("Original Wells" = "red", "Enhanced Wells" = "blue")) +
-  theme_minimal()
+ggplot(calib_df, aes(x = mean_pred, y = obs_rate, group = Model, color = Model)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", alpha = 0.6) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+  labs(
+    title = "Calibration Plot (Pooled Out-of-Fold Predictions)",
+    x = "Mean predicted probability (within bin)",
+    y = "Observed event rate (within bin)",
+    color = "Model"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
 ```
 
+**Conclusion** 
 
-
-**Summary: Comprehensive Results Table **
-
-The table below summarizes the key performance metrics for both the original and enhanced Firth logistic regression models, including the AUC value, Accuracy, Sensitivity, Specificity, Brier Score, and results of the Likelihood Ratio Test comparing the two models.
-
-Major improvements in the enhanced model include:
-- **+10% increase in Specificity**: (62.9% to 72.9%), reflecting a reduction in false-positive classifications.
-- **+3% increase in AUC**: (0.847 to 0.877), indicating stronger overall discrimination between PE and non-PE cases.
-- **+2.2% increase in Accuracy**: (78.7% to 81.0%), suggesting more correct overall classifications.
-- **+7.4% improvement in Calibration**: (Brier Score: 0.1469 to 0.1360), showing that predicted probabilities align more closely with actual outcomes.
-- **Likelihood Ratio Test (p = 0.0027)** provides strong statistical evidence that the enhanced model achieves a significantly better fit compared to the original model.
-
-However, this improvement comes with a minor trade-off:
-
-- **4.8% decrease in Sensitivity** (93.0% to 88.2%), meaning the enhanced model detects slightly fewer true PE cases. Nevertheless, a sensitivity of 88.2% remains excellent in diagnostic contexts.
-
-In summary, the enhanced model (with the addition of the statistically significant predictors positive_d_dimer and echo_rvsp_value) achieves a more optimal balance between sensitivity and specificity. It substantially reduces false-positive rates (by approximately 10%) while maintaining high sensitivity (88.2%) and improving calibration. Overall, the enhanced model more accurately distinguishes between PE and non-PE cases and provides more reliable probability estimates than the original Modified Wells model. 
+**Summary: Comparison of Model Fit, Discrimination, Classification, and Calibration Metrics between Original Model and Enhanced model (2 additional predictors)**
 
 ```{r}
-results_summary <- data.frame(
-  Metric = c("AUC", "Accuracy", "Sensitivity", "Specificity", 
-             "Brier Score", "Likelihood Ratio Test p-value"),
-  Original_Model = c(
-    round(auc(roc_original), 3),
-    round(cm_original$overall["Accuracy"], 3),
-    round(cm_original$byClass["Sensitivity"], 3),
-    round(cm_original$byClass["Specificity"], 3),
-    round(brier_original, 4),
-    "Reference"
-  ),
-  Enhanced_Model = c(
-    round(auc(roc_enhanced), 3),
-    round(cm_enhanced$overall["Accuracy"], 3),
-    round(cm_enhanced$byClass["Sensitivity"], 3),
-    round(cm_enhanced$byClass["Specificity"], 3),
-    round(brier_enhanced, 4),
-    "0.0027"
-  ),
-  Improvement = c(
-    round(auc(roc_enhanced) - auc(roc_original), 3),
-    round(cm_enhanced$overall["Accuracy"] - cm_original$overall["Accuracy"], 3),
-    round(cm_enhanced$byClass["Sensitivity"] - cm_original$byClass["Sensitivity"], 3),
-    round(cm_enhanced$byClass["Specificity"] - cm_original$byClass["Specificity"], 3),
-    round(brier_original - brier_enhanced, 4),  # Positive = improvement
-    "Significant"
-  )
+fit_tbl <- tibble(
+  Category = "Model fit (penalized likelihood)",
+  Metric   = c("AIC (penalized)", "BIC (penalized)", "Penalized deviance"),
+  Original = c(aic_reduced,       bic_reduced,       deviance_original),
+  Enhanced = c(aic_full,          bic_full,          deviance_enhanced)
 )
 
-results_summary %>%
-  kable(format = "html", caption = "Table: Comparison of Predictive Performance between Original and Enhanced Firth Logistic Regression Models") %>%
-  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
-  column_spec(1, bold = TRUE) %>%
-  column_spec(2:4, width = "5cm") %>%
-  row_spec(0, bold = TRUE, color = "black")
+disc_tbl <- tibble(
+  Category = "Discrimination",
+  Metric   = c("AUC (mean across CV folds)", "AUC (pooled out-of-fold)"),
+  Original = c(mean(cv_res$AUC_Original, na.rm = TRUE),
+               as.numeric(auc(roc_original_cv))),
+  Enhanced = c(mean(cv_res$AUC_Enhanced, na.rm = TRUE),
+               as.numeric(auc(roc_enhanced_cv)))
+)
+
+class_tbl <- kaggle_metrics_mean %>%
+  transmute(
+    Category = "Classification (Youden-optimal; mean across CV)",
+    Metric   = as.character(Metric),
+    Original = Original,
+    Enhanced = Enhanced
+  )
+
+cal_tbl <- tibble(
+  Category = "Calibration (pooled out-of-fold)",
+  Metric   = "Brier score (pooled out-of-fold)",
+  Original = brier_orig,
+  Enhanced = brier_enh
+)
+
+summary_tbl <- bind_rows(fit_tbl, disc_tbl, class_tbl, cal_tbl) %>%
+  mutate(
+    Difference = Enhanced - Original
+  ) %>%
+  mutate(across(c(Original, Enhanced, Difference), ~ round(.x, 4)))
+
+idx_fit  <- which(summary_tbl$Category == "Model fit (penalized likelihood)")
+idx_disc <- which(summary_tbl$Category == "Discrimination")
+idx_cls  <- which(summary_tbl$Category == "Classification (Youden-optimal; mean across CV)")
+idx_cal  <- which(summary_tbl$Category == "Calibration (pooled out-of-fold)")
+
+summary_tbl %>%
+  select(Metric, Original, Enhanced, Difference, Category) %>%
+  kbl(
+    caption = "Summary Comparison: Original vs Enhanced Wells (Firth)",
+    col.names = c("Metric", "Original", "Enhanced", "Difference (Enhanced − Original)", "Category"),
+    align = "lcccl",
+    format = "html",
+    escape = FALSE
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) %>%
+  row_spec(0, bold = TRUE) %>%
+  pack_rows("Model fit (penalized likelihood)",
+            min(idx_fit), max(idx_fit), bold = TRUE, background = "#f2f2f2") %>%
+  pack_rows("Discrimination",
+            min(idx_disc), max(idx_disc), bold = TRUE, background = "#f9f9f9") %>%
+  pack_rows("Classification (Youden-optimal; mean across CV)",
+            min(idx_cls), max(idx_cls), bold = TRUE, background = "#f2f2f2") %>%
+  pack_rows("Calibration (pooled out-of-fold)",
+            min(idx_cal), max(idx_cal), bold = TRUE, background = "#f9f9f9")
+
 ```
 
---Leave off Here: November 11, 2025. Will continue further analysis later. -- 
+The enhanced model (Original Wells predictors plus two additional predictors) demonstrated better in-sample fit and improved out-of-sample performance relative to the original Wells model. The **likelihood ratio test** indicated a statistically significant improvement in fit for the enhanced model **(χ² = 30.6026, df = 2, p = 0.000000226)**. Penalized information criteria also favored the enhanced model, with a substantially lower **AIC (Original = 323.1972 vs Enhanced = 296.5946; ΔAIC = −26.6026)** and a lower **BIC** despite its stronger complexity penalty **(Original = 354.2191 vs Enhanced = 335.3719; ΔBIC = −18.8472)**. Penalized deviance similarly decreased from **307.1972 to 276.5946 (Δ = −30.6026)**, indicating improved explanatory power.
 
+Discrimination was evaluated using two cross-validation summaries of AUC. First, the **mean fold-level AUC** across the 50 repeated CV test folds was higher for the enhanced model **(0.8570)** than for the original model **(0.8369)**, corresponding to a mean difference of **ΔAUC = 0.0201**. A **paired t-test** applied to the fold-level AUCs provided evidence that this improvement is positive on average across CV evaluations **(t = 3.5547, df = 49, p = 0.0008496)**. Second, discrimination was also summarized using **pooled out-of-fold predicted probabilities** (one cross-validated probability per patient), yielding pooled AUC values of **0.8089** (Original) and **0.8555** (Enhanced). Taken together, both AUC summaries indicate that the enhanced model more effectively distinguishes patients with pulmonary embolism from those without.
 
-```
+Classification performance was assessed at model-specific optimal cutpoints (Youden’s Index), with thresholds selected on each training fold and then applied to the corresponding held-out fold. Averaged across the 50 held-out evaluations, the enhanced model showed a modest increase in **overall accuracy (0.7666 → 0.7849; Δ = +0.0183)** and a notable gain in **sensitivity (0.6365 → 0.7141; Δ = +0.0776)**, paired with a small reduction in **specificity (0.8846 → 0.8491; Δ = −0.0355)**. Predictive values reflected a similar trade-off: **PPV decreased slightly (0.8472 → 0.8192; Δ = −0.0280)**, while **NPV increased (0.7315 → 0.7693; Δ = +0.0378)**. Overall, the enhanced model improves case detection (higher sensitivity) at the cost of a modest increase in false positives (lower specificity), with small net gains in accuracy and NPV. There is a small net decrease in PPV as well. 
 
+Calibration was evaluated using the **Brier score** computed from pooled out-of-fold predicted probabilities, where each patient’s out-of-fold predictions across repeats were averaged to obtain a single cross-validated predicted probability. The enhanced model achieved a lower (better) Brier score than the original model **(0.1457 vs 0.1546; Δ = −0.0088)**, indicating that the enhanced model’s predicted probabilities were, on average, closer to the observed PE outcomes.
 
+In summary, the enhanced model provides substantially better in-sample fit (AIC/BIC/penalized deviance), improved out-of-sample discrimination (both fold-averaged and pooled out-of-fold AUC), and better calibration (lower Brier score). It also yields a clinically relevant shift in classification performance, increasing sensitivity and NPV with a modest trade-off in specificity and PPV.
 
+For further investigation, a more parsimonious model will be considered by adding only one of the two additional predictors to the original Wells model, with the goal of improving the sensitivity–specificity trade-off while minimizing added complexity, even though the current two-predictor enhanced model demonstrates stronger overall fit and predictive performance than the original Wells model.
 
-
-
-
-
-
-
-
-
-### Extra Analysis: Comparison of All Possible Models 
+### Comparison of All Possible Models (Candidate Subset Comparison)  
 
 After establishing that the enhanced Wells score model (which includes two additional predictors) performs better than the original Wells score model, further analyses were conducted to evaluate the predictive contribution of each individual predictor. Two additional models were developed for this purpose:
 
-- A model including the seven original Wells predictors plus the variable positive_d_dimer.
-- A model including the seven original Wells predictors plus the variable echo_rvsp_value.
+- A model including the seven original Wells predictors plus the variable `positive_d_dimer`.
+- A model including the seven original Wells predictors plus the variable `echo_rvsp_value`.
 
-In other words, the research question being addressed is whether adding only one of the significant predictors (`positive_d_dimer` or `echo_rvsp_value`) to the original Wells model improves its predictive performance, compared to adding both predictors simultaneously. The predictive performance of all four models (original, two single-predictor extensions, and the enhanced model) was compared. All models were fitted using Firth’s logistic regression to account for the issue of perfect separation caused by the variable haemoptysis in the original Modified Wells model.
+In other words, the research question being addressed is whether adding only one of the significant predictors (`positive_d_dimer` or `echo_rvsp_value`) to the original Wells model meaningfully improves its model fit (explanatory power) and predictive performance without adding unncessary complexity, compared to adding both predictors simultaneously. The metrics of all four models (original, two single-predictor extensions, and the enhanced model) was compared. Model performance will be evaluated using fit metrics (penalized AIC, penalized BIC, penalized deviance) and predictive metrics (AUC, sensitivity, specificity, and accuracy) to capture both goodness of fit and discrimination ability, along with calibration metrics.  
+
+All models were fitted using Firth’s logistic regression to account for the issue of perfect separation caused by the variable `haemoptysis` in the original Modified Wells model. Because the dataset is relatively small, all candidate Firth logistic regression models were fit on the full dataset to obtain in-sample fit metrics. In addition, the full firth logistic regression model (including all 9 predictors) was previously fitted in the above section and so model diagnostics for perfect separation and multicollinearity were already examined and satisfied for the subset of these models, confirming that the model is appropriate for further variable selection procedures. 
+The following 4 models were included in this analysis: 
+
+- 1. **Model #1:** Original Modified Wells Model (7 original predictors) 
+- 2. **Model #2:** Original Modified Wells Model + `positive_d_dimer` (8 predictors) 
+- 3. **Model #3: ** Original Modified Wells Model + `echo_rvsp_value` (8 preditors) 
+- 4. **Model #4: ** Full Model with 2 additional predictors (9 predictors) 
 
 ```{r}
-model_ddimer_only_firth <- logistf(pe_status ~ dvt_in_lower_extremity + pe_more_likely + 
-                            heart_rate_100 + immobilization_surgery + dvt_pe + 
-                            haemoptysis + malignancy + positive_d_dimer,
-                            data = merged_data_no_covid)
+wells_pred <- wells_components
 
-model_rvsp_only_firth <- logistf(pe_status ~ dvt_in_lower_extremity + pe_more_likely + 
-                          heart_rate_100 + immobilization_surgery + dvt_pe + 
-                          haemoptysis + malignancy + echo_rvsp_value,
-                          data = merged_data_no_covid)
-model_wells_original_firth 
-model_wells_enhanced_firth 
-```
+pred_plus_ddimer <- union(wells_pred, "positive_d_dimer")
+pred_plus_echo   <- union(wells_pred, "echo_rvsp_value")
+pred_full_two    <- enhanced_predictors 
 
+dat <- merged_data_no_covid[, c("pe_status", pred_full_two)]
+dat$pe_status <- factor(dat$pe_status, levels = c("0","1"))
 
-
-
-```{r, eval = FALSE}
-compare_firth_models <- function(model_wells_original_firth , model_wells_enhanced_firth , predictor_name) {
-  lr_stat <- 2 * ( model_wells_enhanced_firth$loglik - base_model$loglik)
-  p_value <- pchisq(lr_stat, df = 1, lower.tail = FALSE)
-  
-  return(data.frame(
-    Predictor = predictor_name,
-    LogLik_Base = model_wells_original_firth$loglik,
-    LogLik_Enhanced = enhanced_model$loglik,
-    LR_Statistic = lr_stat,
-    P_Value = p_value,
-    Significant = p_value < 0.05
-  ))
+fit_firth <- function(predictors) {
+  logistf(
+    formula = as.formula(paste("pe_status ~", paste(predictors, collapse = " + "))),
+    data = dat
+  )
 }
 
-comparison_results <- rbind(
-  compare_firth_models(model_wells_original_firth, model_ddimer_only_firth, "D-dimer only"),
-  compare_firth_models(model_wells_original_firth, model_rvsp_only_firth, "RVSP only"), 
-  compare_firth_models(mode, model_both, "Both predictors"),
-  compare_firth_models(model_ddimer_only, model_both, "RVSP beyond D-dimer"),
-  compare_firth_models(model_rvsp_only, model_both, "D-dimer beyond RVSP")
+fitted_models <- list(
+  `Model 1: Wells (7)`               = fit_firth(wells_pred),
+  `Model 2: Wells + D-dimer (8)`     = fit_firth(pred_plus_ddimer),
+  `Model 3: Wells + Echo RVSP (8)`   = fit_firth(pred_plus_echo),
+  `Model 4: Wells + Both (9)`        = fit_firth(pred_full_two)
 )
-
-print(comparison_results)
 ```
 
+### Model Fit Performance of all potential Models 
 
-```{r, eval = FALSE}
-calculate_performance <- function(model, model_name) {
-  pred_probs <- predict(model)
-  roc_obj <- roc(merged_data_no_covid$pe_status, pred_probs)
+Model Fit metrics (AIC, BIC, Penalized Deviance) are compared between the 4 models. The difference in metrics as measured as the metric from the larger model minuts the baseline model (original revised wells model with 7 predictors). 
+
+```{r}
+get_fit_metrics <- function(m) {
+  n <- nrow(m$model)                 
+  k <- length(coef(m))                
+  ll <- as.numeric(m$loglik["full"])  
+
+  dev <- -2 * ll
+  aic <- dev + 2 * k
+  bic <- dev + log(n) * k
+
+  tibble(
+    n = n,
+    k = k,
+    LogLik_pen = ll,
+    Deviance_pen = dev,
+    AIC_pen = aic,
+    BIC_pen = bic
+  )
+}
+
+model_summary <- bind_rows(lapply(fitted_models, get_fit_metrics), .id = "Model") %>%
+  mutate(across(where(is.numeric), ~ round(.x, 4)))
+
+base_label <- "Model 1: Wells (7)"
+base_vals <- model_summary %>% filter(Model == base_label)
+
+model_summary <- model_summary %>%
+  mutate(
+    Delta_AIC_pen      = round(AIC_pen - base_vals$AIC_pen, 4),
+    Delta_BIC_pen      = round(BIC_pen - base_vals$BIC_pen, 4),
+    Delta_Deviance_pen = round(Deviance_pen - base_vals$Deviance_pen, 4)
+  ) %>%
+  mutate(
+    Model = factor(
+      Model,
+      levels = c(
+        "Model 1: Wells (7)",
+        "Model 2: Wells + D-dimer (8)",
+        "Model 3: Wells + Echo RVSP (8)",
+        "Model 4: Wells + Both (9)"
+      )
+    )
+  ) %>%
+  arrange(Model)
+
+model_summary %>%
+  select(
+    Model,
+    AIC_pen, BIC_pen, Deviance_pen,
+    Delta_AIC_pen, Delta_BIC_pen, Delta_Deviance_pen
+  ) %>%
+  kbl(
+    caption = "Comparison of Penalized Fit Metrics Among Candidate Firth Logistic Regression Models",
+    col.names = c(
+      "Model",
+      "Penalized AIC", "Penalized BIC", "Penalized Deviance",
+      "ΔAIC (vs Model 1)", "ΔBIC (vs Model 1)", "ΔDeviance (vs Model 1)"
+    ),
+    align = "lcccccc",
+    format = "html"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) %>%
+  row_spec(0, bold = TRUE)
+
+```
+
+### Predictive Performance of all potential Models 
+
+Discrimination, Classification, and Calibration metrics (Mean AUC, Out of fold AUC, Sensitivity, Specificity, Positive Predictive Value, and Negative Predictive Value) are compared between the 4 models. 
+
+
+To evaluate and compare the predictive discrimination of the original Modified Wells model and the enhanced model with two additional predictors, repeated stratified cross-validation was used. The analysis dataset was partitioned into 10 folds, and this procedure was repeated 5 times, yielding 50 train–test evaluations. In each evaluation, a Firth logistic regression model was fit on the training folds (9/10 of the data), predicted probabilities were generated for the held-out fold (1/10 of the data), and a test-fold AUC was computed from the ROC curve. This process was performed separately for the original and enhanced models, and the fold-wise AUC difference (enhanced − original) was calculated to quantify the incremental gain in discrimination. Finally, the mean and standard deviation of the AUC across all folds were summarized for each model and presented in a table.
+
+
+```{r}
+performance_results <- data.frame(
+  Model = character(),
+  AUC = numeric(),
+  Accuracy = numeric(),
+  Sensitivity = numeric(),
+  Specificity = numeric(),
+  PPV = numeric(),
+  NPV = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (model_name in names(fitted_models)) {
+    pred_probs <- predict(fitted_models[[model_name]], newdata = test_data, type = "response")
+  roc_obj <- roc(test_data$diabetes, pred_probs)
+  auc_value <- as.numeric(auc(roc_obj))
+  best_thresh <- coords(roc_obj, "best", ret = "threshold", best.method = "youden")$threshold
   
-  optimal_cutoff <- coords(roc_obj, "best", ret = "threshold")$threshold
-  binary_preds <- ifelse(pred_probs > optimal_cutoff, 1, 0)
-    cm <- confusionMatrix(factor(binary_preds, levels = c(0,1)), 
-                       factor(merged_data_no_covid$pe_status, levels = c(0,1)))
+  pred_class <- factor(ifelse(pred_probs > best_thresh, "Yes", "No"), levels = c("No", "Yes"))
   
-  return(data.frame(
+  cm <- confusionMatrix(pred_class, test_data$diabetes, positive = "Yes")
+  
+  performance_results <- rbind(performance_results, data.frame(
     Model = model_name,
-    LogLik = model$loglik,
-    AUC = auc(roc_obj),
+    AUC = auc_value,
+    Accuracy = cm$overall["Accuracy"],
     Sensitivity = cm$byClass["Sensitivity"],
     Specificity = cm$byClass["Specificity"],
     PPV = cm$byClass["Pos Pred Value"],
-    NPV = cm$byClass["Neg Pred Value"],
-    Accuracy = cm$overall["Accuracy"]
+    NPV = cm$byClass["Neg Pred Value"]
   ))
 }
+
+performance_results <- performance_results %>%
+  mutate(across(where(is.numeric), round, 4))
+
+order_levels <- c(
+  "ADA_original",
+  "ADA_income_only",
+  "ADA_food_only",
+  "ADA_citizen_only",
+  "ADA_income_citizen",
+  "ADA_income_food",
+  "ADA_food_citizenship",
+  "ADA_income_citizen_food",
+  "ADA_full"
+)
+
+performance_results <- performance_results %>%
+  mutate(Model = factor(Model, levels = order_levels)) %>%
+  arrange(Model)
 ```
 
-```{r, eval = FALSE}
-performance_comparison <- performance_comparison %>%
-  mutate(
-    AUC_Improvement = AUC - AUC[1],
-    LogLik_Improvement = LogLik - LogLik[1]
+```{r}
+performance_results %>%
+  kbl(
+    caption = "Comparison of Predictive Performance Metrics Across Candidate Models (Test Set)",
+    col.names = c("Model", "AUC", "Accuracy", "Sensitivity", "Specificity", "PPV", "NPV"),
+    align = "lcccccc",
+    format = "html"
   ) %>%
-  arrange(desc(AUC_Improvement))
-
-print("Model Ranking by Performance Improvement:")
-print(performance_comparison)
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) %>%
+  row_spec(0, bold = TRUE)
 ```
 
-```{r, eval = FALSE}
-ggplot(performance_comparison, aes(x = reorder(Model, AUC), y = AUC, fill = Model)) +
-  geom_col(alpha = 0.8) +
-  labs(title = "AUC Comparison by Predictor Combination",
-       subtitle = "Testing Individual Contributions to Wells Criteria",
-       x = "Model", y = "Area Under Curve (AUC)") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+Combining Two Tables Together: 
 
-ggplot(performance_comparison, aes(x = reorder(Model, LogLik_Improvement), y = LogLik_Improvement)) +
-  geom_col(fill = "steelblue", alpha = 0.8) +
-  labs(title = "Log-Likelihood Improvement Over Baseline",
-       x = "Model", y = "Δ Log-Likelihood") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```{r}
+combined_table <- left_join(model_summary, performance_results, by = "Model") %>%
+  mutate(across(where(is.numeric), round, 4)) %>%
+  select(
+    Model,
+    AIC, BIC, McFadden_R2, Delta_AIC, Delta_BIC, Delta_R2,
+    AUC, Accuracy, Sensitivity, Specificity, PPV, NPV
+  )
+
+auc_baseline <- combined_table$AUC[combined_table$Model == "ADA_original"]
+
+combined_table <- combined_table %>%
+  mutate(
+    Model = ifelse(
+      AUC > auc_baseline,
+      paste0("<span style='color:red; font-weight:bold;'>", Model, "</span>"),
+      paste0("<span style='color:black;'>", Model, "</span>")
+    )
+  )
+
+combined_table %>%
+  kbl(
+    escape = FALSE,  
+    caption = "Combined Comparison of Model Fit and Predictive Performance Metrics Across All Candidate Models",
+    col.names = c(
+      "Model", "AIC", "BIC", "McFadden’s R²", "ΔAIC", "ΔBIC", "ΔR²",
+      "AUC", "Accuracy", "Sensitivity", "Specificity", "PPV", "NPV"
+    ),
+    align = "lccccccccccc",
+    format = "html"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) %>%
+  row_spec(0, bold = TRUE)
 ```
+
+For better visibility in the final report, the absolute values of AIC, BIC, and McFadden’s R squared will not be displayed.
+
+
+
+**Table: Comparison of Model Fit and Predictive Performance ** 
+
+The table below presents the comparative model fit and predictive performance of all candidate logistic regression models. The original ADA model served as the baseline, with ΔAIC and ΔBIC values calculated relative to it. Across all enhanced models, negative ΔAIC values indicate improved model fit compared to the ADA baseline. Considering both fit and parsimony, the results of AIC, BIC, and McFadden’s R² collectively suggest that the ADA + income_poverty_ratio + citizenship_status + food_insecurity model provides the most balanced performance among all candidates. This model achieved the largest reduction in AIC (ΔAIC = −25.349) and a modest improvement in McFadden’s R² (ΔR² = +0.0047), indicating better explanatory power relative to the original ADA model. Although its BIC increased slightly (ΔBIC = +3.064), this change is minimal compared to the full enhanced model (14 predictors), which showed a ΔBIC of +29.555. Therefore, the ADA + income_poverty_ratio + citizenship_status + food_insecurity configuration represents the most parsimonious and best-fitting option among the evaluated candidate models.
+
+In terms of predictive performance, all models demonstrated strong discrimination, with AUC values exceeding 0.80. The ADA + food_insecurity model achieved the highest AUC (0.8077), followed closely by ADA + food_insecurity + citizenship_status (AUC = 0.8068) and ADA + income_poverty_ratio + food_insecurity (AUC = 0.8066). These marginal increases (ΔAUC < 0.003) indicate that including select socioeconomic and social determinant variables slightly enhances discrimination over the original ADA model (AUC = 0.8057). Sensitivity ranged from 0.7869 to 0.8714, with higher sensitivity generally offset by small reductions in specificity. Accuracy remained consistent (0.6466–0.7063), and negative predictive values (NPV > 0.95) confirmed the models’ reliability in identifying non-diabetic individuals. However, positive predictive values (PPV < 0.30) were uniformly low, reflecting the relatively low prevalence of diabetes in the dataset.
+
+```{r}
+combined_table <- left_join(model_summary, performance_results, by = "Model") %>%
+  mutate(across(where(is.numeric), round, 4)) %>%
+  select(
+    Model,
+    Delta_AIC, Delta_BIC, Delta_R2,  
+    AUC, Accuracy, Sensitivity, Specificity, PPV, NPV
+  )
+
+auc_baseline <- combined_table$AUC[combined_table$Model == "ADA_original"]
+combined_table <- combined_table %>%
+  mutate(
+    Model = ifelse(
+      AUC > auc_baseline,
+      paste0("<span style='color:red; font-weight:bold;'>", Model, "</span>"),
+      paste0("<span style='color:black;'>", Model, "</span>")
+    ),
+    AUC = ifelse(
+      AUC > auc_baseline,
+      paste0("<span style='color:red; font-weight:bold;'>", AUC, "</span>"),
+      as.character(AUC)
+    )
+  )
+
+combined_table %>%
+  kbl(
+    escape = FALSE, 
+    caption = "Comparison of Model Fit (ΔAIC, ΔBIC, ΔR²) and Predictive Performance Metrics Across All Candidate Models",
+    col.names = c(
+      "Model", "ΔAIC", "ΔBIC", "ΔR²",
+      "AUC", "Accuracy", "Sensitivity", "Specificity", "PPV", "NPV"
+    ),
+    align = "lcccccccc",
+    format = "html"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) %>%
+  row_spec(0, bold = TRUE)
+```
+
+**Figure: Trade-Off between Model Fit (Caption: Trade-off between Model Fit (ΔAIC) and Predictive Discrimination (AUC) for all 9 Models
+
+Remarks: In Figure 2, the red dashed lines represent the ADA baseline model’s fit (ΔAIC = 0, vertical) and discrimination (AUC = 0.8057, horizontal). Models located on the left of the vertical line demonstrate improved fit (lower AIC) relative to the ADA model, while models above the horizontal line exhibit better predictive discrimination (higher AUC).
+
+The graph illustrates the trade-off between model fit (ΔAIC) and predictive discrimination (AUC) across the nine candidate models, including the original ADA model, the full enhanced model (14 predictors), and the subset models incorporating the three most significant predictors. Each point represents a distinct model, with color used to differentiate them. The ADA + income_poverty_ratio + citizenship_status + food_insecurity model (purple) is positioned farthest to the left and slightly above the ADA baseline (red dashed lines), indicating both a substantially improved model fit (lowest ΔAIC) and marginally higher discriminative ability. This visual pattern supports the conclusions from Table 3, confirming that this model achieves the best balance between improved fit and maintained predictive discrimination relative to the original ADA model.
+
+```{r}
+plot_data <- combined_table %>%
+  mutate(
+    Model = gsub("<.*?>", "", Model), 
+    AUC = gsub("<.*?>", "", AUC),      
+    AUC = as.numeric(AUC),             
+    Delta_AIC = as.numeric(Delta_AIC)
+  ) %>%
+  drop_na(Delta_AIC, AUC)
+
+custom_colors <- c(
+  "#1B9E77", "#D95F02", "#7570B3", "#E7298A", "#66A61E",
+  "#E6AB02", "#A6761D", "#666666", "#8DD3C7", "#BC80BD"
+)
+
+# Plot
+ggplot(plot_data, aes(x = Delta_AIC, y = AUC, color = Model)) +
+  geom_point(size = 4, alpha = 0.9) +
+  geom_text_repel(
+    aes(label = Model),
+    size = 5,
+    fontface = "bold",
+    color = "black",
+    segment.color = NA,
+    max.overlaps = 20,
+    box.padding = 0.5
+  ) +
+  geom_hline(
+    yintercept = 0.8057,
+    color = "red",
+    linetype = "dashed",
+    linewidth = 1.2,
+    alpha = 0.8
+  ) +
+  geom_vline(
+    xintercept = 0,
+    color = "red",
+    linetype = "dashed",
+    linewidth = 1.2,
+    alpha = 0.8
+  ) +
+  scale_color_manual(values = custom_colors) +
+  labs(
+    title = "Model Fit vs Predictive Performance Trade-off",
+    subtitle = "Red dashed lines: ADA baseline fit (vertical) and discrimination (AUC = 0.8057, horizontal)",
+    x = expression(Delta * "AIC (Negative = Better Fit)"),
+    y = "AUC (Higher = Better Discrimination)"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold", size = 15, hjust = 0.5),
+    plot.subtitle = element_text(size = 11, hjust = 0.5),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 11),
+    panel.grid.minor = element_blank()
+  )
+```
+
+**Conclusion: ** 
+
+Overall, incorporating select socioeconomic, behavioral, and social determinant predictors (particularly food_insecurity, income_poverty_ratio, and citizenship_status that proved to be significant predictors of diabetes in earlier analysis) enhanced model fit as evidenced by improved AIC and pseudo-R² values, without significantly reducing classifcation performance. Although none of the expanded models substantially outperform the ADA baseline in out-of-sample classification performance, the improvements in model fit are statistically meaningful. Specifically, the ADA + income_poverty_ratio + citizenship_status + food_insecurity model achieved the strongest overall fit (ΔAIC = −25.35; ΔR² = +0.0047) while maintaining comparable classification metrics (AUC = 0.8060 vs 0.8057, Accuracy = 0.6728 vs 0.6840, Sensitivity = 0.8330 vs 0.8196, Specificity = 0.6477 vs 0.6628). Taken together, this model offers the best balance between improved fit, predictive stability, and parsimony, supporting its selection as the most effective enhancement to the ADA Diabetes Risk Test.
+
+
+
+
+
+
+
+
+#HELLLOOOO 
 
 
 ## Scoring System #2: Modified Geneva Score 
 
-**Scoring System #2 ** The variables included in the Modified Geneva Score scoring system are as follows: 
-
-1. Age > 65 years old - 1 point 
-2. Previous deep venous thrombosis or pulmonary embolism - 3 points
-3. Surgery under general anesthesia or fracture of the lower limbs within one month - 2 points
-4. Active malignancy (solid or hematologic; currently active or cured within the last year) - 2 points 
-5. Symptoms Unilateral lower-limb pain - 3 points 
-6. Haemoptysis - 2 points 
-7. Signs Heart Rate: (75-94 beats per minute) - 3 points or (greater than or equal to 95 beats per minute) - 4 points 
-
-The scoring system of the Modified Geneva score is as follows: 
-
-- Pretest Probability assessment Low (0-3) 
-- Intermediate (4-10) 
-- High (greater than or equal to 11) 
+In this part of the analysis, we will evaluate whether incorporating the three significant variables (`positive_d_dimer`, `dvt_in_lower_extremity`, and `echo_rvsp_value`) into the current Modified Geneva Scoring System meaningfully improves its overall performance in terms of model fit and predictive performance. Model fit was assessed using AIC, BIC, and penalized deviance, while predictive performance was evaluated in terms of both discrimination (Area Under the ROC Curve, AUC), classification accuracy (sensitivity, specificity, PPV, NPV, and overall accuracy), and calibration performance (how well the predicted probabilities match real world outcome frequencies). The analysis also aimed to identify the most parsimonious subset of these additional predictors that provides the optimal balance between model fit, predictive performance, and simplicity for practical screening for pulmonary embolism.
 
 
-### Model Selection 
+**Original Variables in the Modified Geneva Scoring System:** 
+- 1. `age_greater_65`: Age > 65 years old - 1 point 
+- 2. `dvt_pe`: Previous deep venous thrombosis or pulmonary embolism - 3 points
+- 3. `surgery_fracture`: Surgery under general anesthesia or fracture of the lower limbs within one month - 2 points
+- 4. `active_malignancy`: Active malignancy (solid or hematologic; currently active or cured within the last year) - 2 points 
+- 5. `unilateral_lower_limb_pain`: Symptoms Unilateral lower-limb pain - 3 points 
+- 6.  `haemoptysis`: Haemoptysis - 2 points 
+- 7.  `heart_rate_geneva`: Signs Heart Rate: (75-94 beats per minute) - 3 points or (greater than or equal to 95 beats per minute) - 4 points 
+- 8. `pain_lower_limb_edema`: Pain on lower limb deep venous palpation and unilateral oedema - 4 points 
 
-Model selection criterion were used to further evaluate the fit of the two nested models. 
+**Interpretation of Modified Geneva Score:** 
 
-**1. Model Selection Based on AIC **
+- *Pretest Probability assessment Low*: **(0-3 points)**
+- *Intermediate:* **(4-10 points)**
+- *High:* **(greater than or equal to 11 points)** 
 
-The AIC (Akaike's Information Criterion) value of the two models are compared, which is a statistical metric utilized for model selection). The Original Modified Wells model has an AIC value of 335.5399 while the enhanced model has an AIC value of 318.8186. The enhanced model has a lower AIC value, which is indicative that the model has a better balance between the goodness of fit and parsimony. Therefore, this supports the conclusions drawn from the likelihood ratio test results where the inclusion of the variables `positive_d_dimer` and `echo_rvsp_value` improves the predictive performance of the model.
+### Logistic Model Fitting (Modified Geneva Scoring System)
+> *Does adding all three significant predictors improve the model fit and predictive performance of the original Modified Wells diagnostic scoring system?*
+
+Fitting Logistic Regression Model with Original Predictors: To evaluate the overall performance of the original **Modified Geneva Score**, a logistic regression model was fitted with the binary outcome variable `pe_status` (presence or absence of pulmonary embolism) regressed on the eight original predictors that comprise the **Modified Geneva criteria.**
+
+```{r}
+merged_data_no_covid
+
+geneva_components <- c("age_greater_65", "dvt_pe", "surgery_fracture", "active_malignancy", "unilateral_lower_limb_pain", "haemoptysis", "heart_rate_geneva", "pain_lower_limb_edema") 
+
+colnames(merged_data_no_covid)
+
+model_geneva_original <- glm(pe_status ~ .,
+                     data = merged_data_no_covid[, c("pe_status", geneva_components)],
+                     family = binomial)
+```
+
+3 significant predictors: `dvt_in_lower_extremity`, `echo_rvsp_value`, and `positive_d_dimer` 
+ 
+Fitting Logistic Regression Model with Additional Predictors: To evaluate whether incorporating additional statistically significant predictors improves the overall performance of the original Modified Geneva Score, the original model was expanded to include three additional variables: `echo_rvsp_value`, `positive_d_dimer`, and `dvt_in_lower_extremity`. 
+
+```{r}
+enhanced_geneva_predictors <- c(geneva_components, "positive_d_dimer", "echo_rvsp_value", "dvt_in_lower_extremity")
+enhanced_geneva_predictors <- unique(enhanced_geneva_predictors)
+
+model_geneva_enhanced <- glm(pe_status ~ .,
+                     data = merged_data_no_covid[, c("pe_status", enhanced_geneva_predictors)], 
+                     family = binomial)
+```
+
+Before conducting the likelihood ratio test to compare the two nested logistic regression models, both **perfect separation** and **multicollinearity** were assessed to ensure model validity. In examining perfect separation, the variable `haemoptysis` was identified as problematic (which was already established when constructing the Modified Wells model). As a result, a bias-reduced logistic regression model, also known as **Firth’s logistic regression**, was employed to address the issue of perfect separation. The variable `haemoptysis` was retained in the model despite perfect separation because it represents a clinically essential component of the original Modified Geneva Score diagnostic criteria.
+
+```{r}
+for (var in enhanced_geneva_predictors) {
+  cat("Checking separation for:", var, "\n")
+  print(table(merged_data_no_covid[[var]], merged_data_no_covid$pe_status, useNA = "ifany"))
+}
+```
+
+The summary of the Firth Regression model for the Original Modified Geneva Score Model is as follows: 
+
+```{r}
+model_geneva_original_firth <- logistf(pe_status ~ .,
+                                     data = merged_data_no_covid[, c("pe_status", geneva_components)])
+summary(model_geneva_original_firth)
+```
+
+The summary of the Firth Regression model for the Enhanced Modified Geneva Score Model (including three more parameters) is as follows: 
+
+```{r}
+model_geneva_enhanced_firth <- logistf(pe_status ~ .,
+                                     data = merged_data_no_covid[, c("pe_status", enhanced_geneva_predictors)])
+summary(model_geneva_enhanced_firth)
+```
+
+Next, **multicollinearity** among predictors was assessed for both the original and enhanced models. Although Firth’s logistic regression was used to address perfect separation, this bias-corrected approach does not alter the relationships among predictors. Therefore, multicollinearity was evaluated using the corresponding standard logistic regression models.
+
+All Variance Inflation Factor (VIF) values were below 5, indicating that no strong multicollinearity was present among the wells predictors in the model. This suggests that the estimated regression coefficients are stable and not inflated due to redundant information between variables.
+
+```{r}
+vif_results <- car::vif(model_geneva_original)
+print(vif_results)
+```
+
+All Variance Inflation Factor (VIF) values were below 5, indicating that no strong multicollinearity was present among the wells predictors, as well as `positive_d_dimer` and `echo_rvsp_value` in the model. This suggests that the estimated regression coefficients are stable and not inflated due to redundant information between variables.
+
+```{r}
+vif_results <- car::vif(model_geneva_enhanced)
+print(vif_results)
+```
+
+Likelihood ratio tests comparing the reduced and full models are next performed after detecting perfect separation and then addressing it by using Firth's penalized logistic regression along with assessing multicollinearity. 
+
+### Statistical Comparison: Likelihood Ratio Test between Reduced and Full Model (after adding 3 new predictors) 
+
+A likelihood ratio test was conducted to compare two nested Firth's penalized logistic regression models. The null hypothesis states that the reduced model, which includes only the original **Modified Geneva Score** predictors, provides an adequate fit to the data. The alternative hypothesis suggests that the extended model, which includes the original predictors plus three additional variables, offers a significantly better fit. 
+
+The test produced a test statistic value of **30.6026** on 2 degrees of freedom and a **p-value of 0.000000226**, indicating strong evidence against the null hypothesis. Therefore, it can be concluded that adding the predictors `positive_d_dimer`, `echo_rvsp_value`, and `dvt_in_lower_extremity` significantly improves the model's ability to explain significant additional variation in pulmonary embolism status beyond what the predictors of the original Modified Geneva Score alone explains. This suggests that the full model provides a better fit to the in-sample data compared to the original Modified Geneva Score model. 
+
+```{r}
+ll_original  <- model_geneva_original_firth$loglik["full"]
+ll_enhanced  <- model_geneva_enhanced_firth$loglik["full"]
+
+lr_stat <- 2 * (ll_enhanced - ll_original)
+
+df_diff <- (length(coef(model_geneva_enhanced_firth)) -
+            length(coef(model_geneva_original_firth)))  
+
+p_value <- pchisq(lr_stat, df = df_diff, lower.tail = FALSE)
+
+cat(sprintf("Penalized LRT: χ²(%d) = %.4f, p = %.9f\n",
+            df_diff, lr_stat, p_value))
+```
+
+### Statistical Comparison: Model Selection Criteria: Penalized Log-likelihood, Penalized Deviance, AIC, BIC 
+
+**Model Selection Criteria #1: Penalized Log-Likelihood and Penalized Deviance ** 
+
+To further compare model fit between the two Firth logistic regression models, we examined the **penalized deviance**, defined as −2 times the fitted penalized log-likelihood. Penalized deviance was **307.20** for the original Modified Geneva model and **276.59** for the enhanced model. The deviance difference (original − enhanced) was **30.60**, indicating that the enhanced model achieves a substantially lower penalized deviance (better in-sample fit) under the Firth penalized likelihood. This result is consistent with the earlier penalized likelihood ratio test showing improved fit after adding `positive_d_dimer`, `echo_rvsp_value`, and `dvt_in_lower_extremity`. 
+
+```{r}
+ll_orig <- model_geneva_original_firth$loglik["full"]
+ll_enh  <- model_geneva_enhanced_firth$loglik["full"]
+
+deviance_original <- -2 * ll_orig
+deviance_enhanced  <- -2 * ll_enh
+
+model_comparison_deviance <- data.frame(
+  Model = c("Reduced (Original Geneva, Firth)",
+            "Full (Enhanced Geneva, Firth)",
+            "Difference (Original - Enhanced)"),
+  Deviance = round(c(
+    as.numeric(deviance_original),
+    as.numeric(deviance_enhanced),
+    as.numeric(deviance_original - deviance_enhanced)
+  ), 2),
+  stringsAsFactors = FALSE
+)
+print(model_comparison_deviance)
+```
 
 
-**3. Model Selection Based on Backward Seleciton **
+**Model Selection Criteria #2: AIC and BIC (computed from the penalized log-likelihood)** 
+
+To further compare in-sample model fit between the two nested Firth logistic regression models, we computed the Akaike Information Criterion (AIC) and Bayesian Information Criterion (BIC) using the models’ penalized log-likelihoods. Both criteria balance goodness of fit with a penalty for model complexity where lower values indicate a better tradeoff between fit and parsimony.
+
+Relative to the reduced model, the enhanced model had an AIC that was lower by 26.60 units and a BIC that was lower by 18.85 units. The decreases in both criteria indicate that the improvement in fit from adding the variables, `positive_d_dimer`, `echo_rvsp_value`, and `dvt_in_lower_extremity` outweighs the penalty for including additional parameters even under BIC’s more conservative complexity penalty.
+
+Taken together with the penalized likelihood ratio test results, these findings support selecting the enhanced model as providing better in-sample fit after accounting for its greater complexity.
+
+```{r}
+k_reduced <- length(coef(model_geneva_original_firth))   
+k_full    <- length(coef(model_geneva_enhanced_firth))  
+
+n_reduced <- model_geneva_original_firth$n
+n_full    <- model_geneva_enhanced_firth$n
+
+n <- min(n_reduced, n_full)
+
+aic_reduced <- -2 * ll_orig + 2 * k_reduced
+aic_full    <- -2 * ll_enh    + 2 * k_full
+
+bic_reduced <- -2 * ll_orig + log(n) * k_reduced
+bic_full    <- -2 * ll_enh    + log(n) * k_full
+
+model_comparison <- data.frame(
+  Model = c("Reduced (Original Geneva, Firth)",
+            "Full (Enhanced Geneva, Firth)",
+            "Difference (Reduced - Full)"),
+  AIC = round(c(aic_reduced, aic_full, aic_reduced - aic_full), 2),
+  BIC = round(c(bic_reduced, bic_full, bic_reduced - bic_full), 2),
+  stringsAsFactors = FALSE
+)
+
+print(model_comparison)
+```
+
+### Comparison of Predictive Performance between 2 Models 
+
+To evaluate and compare the predictive discrimination of the original Modified Geneva model and the enhanced model with three additional predictors, repeated stratified cross-validation was used. The analysis dataset was partitioned into 10 folds, and this procedure was repeated 5 times, yielding 50 train–test evaluations. In each evaluation, a Firth logistic regression model was fit on the training folds (9/10 of the data), predicted probabilities were generated for the held-out fold (1/10 of the data), and a test-fold AUC was computed from the ROC curve. This process was performed separately for the original and enhanced models, and the fold-wise AUC difference (enhanced − original) was calculated to quantify the incremental gain in discrimination. Finally, the mean and standard deviation of the AUC across all folds were summarized for each model and presented in a table.
+
+**Method 1: Comparison of AUC (Area under the Curve) Values: **
+
+Using repeated cross-validation, the out-of-sample discrimination was:
+
+- Original Modified Geneva Model: **Average AUC = 0.8369**
+- Enhanced Model: **Average AUC = 0.8570**
+
+The mean fold-level difference in AUC across the repeated cross-validation splits was **ΔAUC = 0.0202**, indicating that the enhanced model provides a modest improvement in discrimination. The AUC measures a model’s ability to distinguish between individuals with and without pulmonary embolism across all possible classification thresholds (0.5 = no discrimination; 1.0 = perfect discrimination). Both models demonstrated strong discrimination (AUC > 0.80), with slightly higher AUC for the enhanced model.
+
+```{r}
+set.seed(123)
+dat <- merged_data_no_covid[, c("pe_status", enhanced_geneva_predictors)]
+dat$pe_status <- factor(dat$pe_status, levels = c("0","1"))
+folds <- createMultiFolds(dat$pe_status, k = 10, times = 5)
+
+calc_fold_auc <- function(train_idx, predictors) {
+  train <- dat[train_idx, , drop = FALSE]
+  test  <- dat[-train_idx, , drop = FALSE]
+
+  fit <- logistf(pe_status ~ ., data = train[, c("pe_status", predictors)])
+  p   <- predict(fit, newdata = test, type = "response")
+
+  roc_obj <- roc(test$pe_status, p, levels = c("0","1"), direction = "<", quiet = TRUE)
+  as.numeric(auc(roc_obj))
+}
+
+auc_orig <- sapply(folds, calc_fold_auc, predictors = geneva_components)
+auc_enh  <- sapply(folds, calc_fold_auc, predictors = enhanced_geneva_predictors)
+
+cv_res <- data.frame(
+  Fold = names(folds),
+  AUC_Original = auc_orig,
+  AUC_Enhanced = auc_enh,
+  Delta_AUC = auc_enh - auc_orig
+) %>%
+  mutate(across(c(AUC_Original, AUC_Enhanced, Delta_AUC), ~ round(.x, 4)))
+
+auc_summary_long <- bind_rows(
+  data.frame(Metric = "AUC (Original Wells, Firth)", Mean = mean(cv_res$AUC_Original), SD = sd(cv_res$AUC_Original)),
+  data.frame(Metric = "AUC (Enhanced Wells, Firth)", Mean = mean(cv_res$AUC_Enhanced), SD = sd(cv_res$AUC_Enhanced)),
+  data.frame(Metric = "ΔAUC (Enhanced − Original)",  Mean = mean(cv_res$Delta_AUC),  SD = sd(cv_res$Delta_AUC))
+) %>%
+  mutate(across(c(Mean, SD), ~ round(.x, 4)))
+
+auc_summary_long %>%
+  kbl(
+    caption = "Repeated 10-fold CV (5 repeats): Mean AUC and SD",
+    col.names = c("Metric", "Mean", "SD"),
+    align = "lcc",
+    format = "html"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) %>%
+  row_spec(0, bold = TRUE)
+
+tt_auc <- t.test(cv_res$AUC_Enhanced, cv_res$AUC_Original, paired = TRUE)
+tt_auc
+```
+
+
+A paired t-test was applied to the 50 fold-level ΔAUC (enhanced-original) from the repeated 10-fold cross-validation to assess whether the enhanced model tends to yield higher AUC than the original model on the same held-out splits. The test produced **t = 3.5547, df = 49, and p = 0.0008496**, providing evidence that the ΔAUC is positive on average across the CV evaluations. Overall, these results sugget that adding `positive_d_dimer`,  `echo_rvsp_value`, and `dvt_in_lower_extremity` yields a small but consistent improvement in out of sample discrimination. 
+
+**Method 2: Classification Performance at Optimal Cutpoint ** 
+
+To compare the classification performance of the two firth logistic regression models, predicted probabilities were converted into binary outcomes using optimal cutpoints determined by Youden’s Index from the ROC curves. Youden’s Index, defined as (Sensitivity + Specificity – 1), identifies the threshold that maximizes the model’s ability to correctly classify positive and negative cases. Using these optimal thresholds, key performance metrics such as Accuracy, Sensitivity, Specificity, Positive Predictive Value (PPV), and Negative Predictive Value (NPV) were calculated for both models to evaluate and compare their diagnostic performance. The Firth logistic regression models were fitted on the training folds and the training fold ROC curve was used to choose an optimal cutoff determined by Youden's index. The cutoff was then applied to the held-out fold to classify individuals as having pulmonary embolsim versus not. This process is repeated for the two models across all the folds where the averages of each metric across the 50 held out evaluations. 
+
+**Accuracy** increased slightly from **0.7666 (original) to 0.7849 (Enhanced)** with a difference of **+0.0183**, indicating an overall increase, but negligible, in the model’s predictive ability to classify individuals correctly as having or not having pulmonary embolism.
+
+**Sensitivity**, which measures the model’s ability to correctly identify patients with pulmonary embolism, increased from **0.6365 to 0.7141** with a difference of **+0.0776**. This suggests that the enhanced model is more sensitive meaning that it catches more true pulmonary embolism cases. **Specificity**, representing the ability to correctly identify individuals without pulmonary embolism, decreased from **0.8846 to 0.8491** with a difference of **-0.0355**, indicating that the enhanced model is marginally less effective at ruling out non-cases and may produce slightly more false positives.
+
+In addition, **PPV** decreased slightly from **0.8472 to 0.8192** with a difference of **-0.0280**, meaning that a lower proportion of individuals predicted to have pulmonary embolism by the enhanced model were correctly classified. Conversely, **NPV** increased slightly from **0.7315 to 0.7693** with a difference of **0.0378**, suggesting a modest increase in the accuracy of identifying true negatives.
+
+In conclusion, at Youden-optimal cutpoints, the enhanced model provides modestly higher sensitivity and NPV at the cost of a small reduction in specificity and PPV, with a slight net gain in accuracy.
+
+```{r}
+calc_metrics <- function(TP, FP, TN, FN) {
+  c(
+    Accuracy    = (TP + TN) / (TP + FP + TN + FN),
+    Sensitivity = ifelse(TP + FN == 0, NA, TP / (TP + FN)),
+    Specificity = ifelse(TN + FP == 0, NA, TN / (TN + FP)),
+    PPV         = ifelse(TP + FP == 0, NA, TP / (TP + FP)),
+    NPV         = ifelse(TN + FN == 0, NA, TN / (TN + FN))
+  )
+}
+
+eval_fold_classification <- function(train_idx, predictors) {
+  train <- dat[train_idx, , drop = FALSE]
+  test  <- dat[-train_idx, , drop = FALSE]
+
+  fit <- logistf(pe_status ~ ., data = train[, c("pe_status", predictors)])
+
+  p_train <- predict(fit, newdata = train, type = "response")
+  p_test  <- predict(fit, newdata = test,  type = "response")
+
+  roc_train <- roc(train$pe_status, p_train, levels = c("0","1"), direction = "<", quiet = TRUE)
+  thr <- coords(roc_train, x = "best", best.method = "youden",
+                ret = "threshold", transpose = FALSE)[["threshold"]]
+
+  pred_test <- factor(ifelse(p_test >= thr, "1", "0"), levels = c("0","1"))
+  y <- factor(test$pe_status, levels = c("0","1"))
+
+  TP <- sum(pred_test == "1" & y == "1")
+  FP <- sum(pred_test == "1" & y == "0")
+  TN <- sum(pred_test == "0" & y == "0")
+  FN <- sum(pred_test == "0" & y == "1")
+
+  c(Threshold = thr, calc_metrics(TP, FP, TN, FN))
+}
+
+res_orig <- t(sapply(folds, eval_fold_classification, predictors = geneva_components))
+res_enh  <- t(sapply(folds, eval_fold_classification, predictors = enhanced_geneva_predictors))
+
+res_orig <- as.data.frame(res_orig); res_enh <- as.data.frame(res_enh)
+res_orig$Fold  <- names(folds);      res_enh$Fold  <- names(folds)
+res_orig$Model <- "Original Geneva (Firth)"
+res_enh$Model  <- "Enhanced Geneva (Firth)"
+
+cv_class <- bind_rows(res_orig, res_enh) %>%
+  relocate(Model, Fold) %>%
+  mutate(across(c(Threshold, Accuracy, Sensitivity, Specificity, PPV, NPV), as.numeric))
+
+cv_class_summary <- cv_class %>%
+  group_by(Model) %>%
+  summarise(
+    Mean_Threshold   = mean(Threshold, na.rm = TRUE),
+    Mean_Accuracy    = mean(Accuracy, na.rm = TRUE),
+    Mean_Sensitivity = mean(Sensitivity, na.rm = TRUE),
+    Mean_Specificity = mean(Specificity, na.rm = TRUE),
+    Mean_PPV         = mean(PPV, na.rm = TRUE),
+    Mean_NPV         = mean(NPV, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+kaggle_metrics_mean <- cv_class_summary %>%
+  select(Model, starts_with("Mean_")) %>%
+  pivot_longer(cols = -Model, names_to = "Metric", values_to = "Value") %>%
+  mutate(
+    Metric = sub("^Mean_", "", Metric),
+    Metric = case_when(
+      Metric == "Threshold"   ~ "Youden Threshold",
+      Metric == "Accuracy"    ~ "Accuracy",
+      Metric == "Sensitivity" ~ "Sensitivity",
+      Metric == "Specificity" ~ "Specificity",
+      Metric == "PPV"         ~ "PPV",
+      Metric == "NPV"         ~ "NPV",
+      TRUE ~ Metric
+    )
+  ) %>%
+  pivot_wider(names_from = Model, values_from = Value) %>%
+  rename(
+    Original = `Original Geneva (Firth)`,
+    Enhanced = `Enhanced Geneva (Firth)`
+  ) %>%
+  mutate(
+    Difference = Enhanced - Original,
+    across(c(Original, Enhanced, Difference), ~ round(.x, 4)),
+    Metric = factor(Metric, levels = c("Youden Threshold","Accuracy","Sensitivity","Specificity","PPV","NPV"))
+  ) %>%
+  arrange(Metric) %>%
+  select(Metric, Original, Enhanced, Difference)
+
+kaggle_metrics_mean %>%
+  kbl(
+    caption = "Repeated 10-fold CV (5 repeats): Mean Classification Metrics at Youden-Optimal Cutpoints",
+    col.names = c("Metric", "Original Geneva (Firth)", "Enhanced Geneva (Firth)", "Difference (Enhanced − Original)"),
+    align = "lccc",
+    format = "html"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) %>%
+  row_spec(0, bold = TRUE)
+```
+
+
+**Method 3: Visualization of Comparison of the ROC Curves of the Two Models **
+
+One ROC curve was created for each model (original and enhanced). For each repeated 10-fold split, a Firth logistic regression was fit on the training data and then predicts probabilities for the testing data. These held-out predictions were then saved together with the subject's true outcome and a stable identifier (row number). Because the cross-validation was repeated 5 times, each patient was held out once per repeat and therefore received multiple out-of-fold predicted probabilities. Across 5 repeats, every patient appears in the test fold exactly once. These probabilities were then averaged for each patient to produce a single cross-validated predicted probability per patient. Using these pooled out-of-fold predictions and taking into account different thresholds, ROC curves and AUC values were computed for both models and plotted together. 
+
+The diagonal dashed line represents the line of no discrimination (AUC = 0.5), indicating performance equivalent to random guessing. Both ROC curves lie well above this line, demonstrating that each model has meaningful discriminative ability. The enhanced model is consistently better overall as the red curve is above the blue curve for most of the false-positive rate range. This observation is supported by the increase area under the curve (AUC) for the Enhanced model (0.8554577) compared to the Original model (0.8089022), supporting the prior results earlier that there is meaningful gain in discrimination from adding the two predictors when calculating the mean AUC values. 
+
+It is important to note that the AUC values reported earlier were mean AUCs averaged across the 50 held out folds. For the ROC plot below, AUC was instead recalculated using pooled out-of-fold predicted probabilities, where each patient’s out-of-fold predictions across repeats were averaged to yield one cross-validated probability per patient. As a result, the AUC values shown in the ROC figure may differ from the previously reported mean fold-level AUCs because they are based on a different (pooled) cross-validation summary approach.
+
+```{r}
+set.seed(123)
+get_oof_preds <- function(train_idx, predictors) {
+  test_idx <- setdiff(seq_len(nrow(dat)), train_idx)
+
+  train <- dat[train_idx, , drop = FALSE]
+  test  <- dat[test_idx,  , drop = FALSE]
+
+  fit <- logistf(pe_status ~ ., data = train[, c("pe_status", predictors)])
+  p   <- predict(fit, newdata = test, type = "response")
+
+  data.frame(
+    row_id = test_idx,
+    y      = test$pe_status,
+    p      = as.numeric(p)
+  )
+}
+
+oof_orig <- bind_rows(lapply(folds, get_oof_preds, predictors = geneva_components)) %>%
+  group_by(row_id) %>%
+  summarise(y = first(y), p = mean(p), .groups = "drop")
+
+oof_enh <- bind_rows(lapply(folds, get_oof_preds, predictors = enhanced_geneva_predictors)) %>%
+  group_by(row_id) %>%
+  summarise(y = first(y), p = mean(p), .groups = "drop")
+
+roc_original_cv <- roc(oof_orig$y, oof_orig$p, levels = c("0","1"), direction = "<", quiet = TRUE)
+roc_enhanced_cv <- roc(oof_enh$y,  oof_enh$p,  levels = c("0","1"), direction = "<", quiet = TRUE)
+
+cat("Pooled AUC (Original) =", as.numeric(auc(roc_original_cv)), "\n")
+cat("Pooled AUC (Enhanced) =", as.numeric(auc(roc_enhanced_cv)), "\n")
+
+ggplot() +
+  geom_line(aes(x = 1 - roc_original_cv$specificities,
+                y = roc_original_cv$sensitivities,
+                color = "Original Geneva (Firth)"),
+            linewidth = 1.2) +
+  geom_line(aes(x = 1 - roc_enhanced_cv$specificities,
+                y = roc_enhanced_cv$sensitivities,
+                color = "Enhanced Geneva (Firth)"),
+            linewidth = 1.2) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed",
+              color = "gray50", alpha = 0.7) +
+  labs(
+    x = "1 − Specificity (False Positive Rate)",
+    y = "Sensitivity (True Positive Rate)",
+    title = "ROC Curve Comparison (Pooled Out-of-Fold Predictions)",
+    subtitle = paste0(
+      "Original AUC: ", round(as.numeric(auc(roc_original_cv)), 3),
+      " | Enhanced AUC: ", round(as.numeric(auc(roc_enhanced_cv)), 3)
+    ),
+    color = "Models"
+  ) +
+  coord_equal() +
+  scale_x_continuous(limits = c(0,1), expand = c(0,0)) +
+  scale_y_continuous(limits = c(0,1), expand = c(0,0)) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+### Comparison of Calibration between 2 Models 
+
+After establishing that the addition of the three predictors improved the discriminatory ability of the enhanced Modified Geneva Score model, it is also important to assess whether the predicted probabilities align with the actual observed outcomes of pulmonary embolism. While improved discrimination indicates a model’s enhanced ability to distinguish between patients with and without PE, robust calibration ensures that the predicted probabilities accurately reflect the true likelihood of the outcome. Therefore, both discrimination and calibration must be considered when evaluating the overall predictive performance of a diagnostic model.
+
+**Method 1: Comparison of Brier Score of Calibration ** 
+
+The **Brier score** was computed for both the original and enhanced Firth logistic regression models to evaluate calibration or how closely the predicted probabilities of pulmonary embolism (PE) match the observed PE outcomes. Brier scores were calculated using **pooled out-of-fold predictions** from the repeated 10-fold cross-validation procedure. In each split, the Firth model was fit on the training folds and predicted probabilities were generated for the held-out fold. Because cross-validation was repeated 5 times, each patient contributed multiple out-of-fold predictions. These probabilities were then **averaged within patient** to obtain a single cross-validated predicted probability per individual. The Brier score was then computed as the mean squared error between these predicted probabilities and the observed outcomes (0/1), where lower values indicate better-calibrated and more accurate probability estimates.
+
+The original Modified Geneva model produced a Brier score of **0.1546**, while the enhanced model achieved a lower Brier score of **0.1457**, corresponding to a **5.72% reduction**. This indicates that the enhanced model yields probability estimates that are, on average, closer to the true PE outcomes and therefore **better calibrated**. Together with the observed gains in discrimination, these results support including `positive_d_dimer`,  `echo_rvsp_value`, and `dvt_in_lower_extremity` as additions to the Modified Geneva framework to improve the model’s overall predictive performance and clinical usefulness.
+
+```{r}
+set.seed(123)
+
+get_oof_preds <- function(train_idx, predictors) {
+  test_idx <- setdiff(seq_len(nrow(dat)), train_idx)
+
+  train <- dat[train_idx, , drop = FALSE]
+  test  <- dat[test_idx,  , drop = FALSE]
+
+  fit <- logistf(pe_status ~ ., data = train[, c("pe_status", predictors)])
+  p   <- predict(fit, newdata = test, type = "response")
+
+  data.frame(
+    row_id = test_idx,
+    y      = test$pe_status,      
+    p      = as.numeric(p)        
+  )
+}
+
+oof_orig <- bind_rows(lapply(folds, get_oof_preds, predictors = geneva_components)) %>%
+  group_by(row_id) %>%
+  summarise(y = first(y), p = mean(p), .groups = "drop")
+
+oof_enh <- bind_rows(lapply(folds, get_oof_preds, predictors = enhanced_geneva_predictors)) %>%
+  group_by(row_id) %>%
+  summarise(y = first(y), p = mean(p), .groups = "drop")
+
+y_num_orig <- as.numeric(as.character(oof_orig$y))
+y_num_enh  <- as.numeric(as.character(oof_enh$y))
+
+brier_orig <- mean((oof_orig$p - y_num_orig)^2)
+brier_enh  <- mean((oof_enh$p  - y_num_enh )^2)
+
+cat(sprintf("Pooled OOF Brier score (Original) = %.4f\n", brier_orig))
+cat(sprintf("Pooled OOF Brier score (Enhanced) = %.4f\n", brier_enh))
+cat(sprintf("ΔBrier (Enhanced − Original)      = %.4f\n", brier_enh - brier_orig))
+
+cat(sprintf("Relative Brier improvement = %.2f%%\n",
+            100 * (brier_orig - brier_enh) / brier_orig))
+
+```
+
+**Method 2: Calibration Plot ** 
+
+To visually compare calibration between the original and enhanced Firth logistic regression models, a calibration plot was generated using pooled out-of-fold (cross-validated) predicted probabilities. Patients were grouped into 10 equal-sized bins (deciles) based on predicted risk. Within each bin, the mean predicted probability was plotted against the observed event rate (proportion with PE). The dashed 45° line represents perfect calibration, where predicted risk equals observed risk; points above this line indicate underestimation (observed > predicted), whereas points below indicate overestimation (observed < predicted).
+
+Upon examining the plot, the red line representing the Enhanced Geneva model closely follows the diagonal across most of the risk levels, suggesting good calibration. For example, when the model predicts roughly a 23% risk, the actual observed risk is also approximately 23%, as evidenced by the curve’s proximity to the ideal line. Across most risk ranges, the enhanced model maintains this alignment, with only a slight underestimation at higher probabilities and slight overestimation in the lower probabilities. 
+
+In contrast, the blue line representing the Original Geneva model shows more pronounced deviations from the ideal diagnoal line. Notably, at a predicted probability of around 28%, the observed risk increases to around 63%, indicating that the model underestimates risk in this region. Conversely, at a predicted probability of about 16%, the observed risk peaks at 0%, suggesting overestimation at specific risk levels.
+
+In summary, the calibration plot clearly demonstrates that the Enhanced Geneva model (red) provides superior calibration, as its predictions more closely align with the observed outcomes compared to the Original Geneva model (blue).
+
+```{r}
+make_calib_df <- function(oof, model_name, n_bins = 10) {
+  oof %>%
+    mutate(
+      Model = model_name,
+      y_num = as.numeric(as.character(y))
+    ) %>%
+    mutate(bin = ntile(p, n_bins)) %>%
+    group_by(Model, bin) %>%
+    summarise(
+      mean_pred = mean(p, na.rm = TRUE),
+      obs_rate  = mean(y_num, na.rm = TRUE),
+      n         = n(),
+      .groups   = "drop"
+    )
+}
+
+calib_orig <- make_calib_df(oof_orig, "Original Geneva (Firth)", n_bins = 10)
+calib_enh  <- make_calib_df(oof_enh,  "Enhanced Geneva (Firth)", n_bins = 10)
+
+calib_df <- bind_rows(calib_orig, calib_enh)
+
+ggplot(calib_df, aes(x = mean_pred, y = obs_rate, group = Model, color = Model)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", alpha = 0.6) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+  labs(
+    title = "Calibration Plot (Pooled Out-of-Fold Predictions)",
+    x = "Mean predicted probability (within bin)",
+    y = "Observed event rate (within bin)",
+    color = "Model"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+```
+
+**Conclusion** 
+
+**Summary: Comparison of Model Fit, Discrimination, Classification, and Calibration Metrics between Original Model and Enhanced model (3 additional predictors)**
+
+```{r}
+fit_tbl <- tibble(
+  Category = "Model fit (penalized likelihood)",
+  Metric   = c("AIC (penalized)", "BIC (penalized)", "Penalized deviance"),
+  Original = c(aic_reduced,       bic_reduced,       deviance_original),
+  Enhanced = c(aic_full,          bic_full,          deviance_enhanced)
+)
+
+disc_tbl <- tibble(
+  Category = "Discrimination",
+  Metric   = c("AUC (mean across CV folds)", "AUC (pooled out-of-fold)"),
+  Original = c(mean(cv_res$AUC_Original, na.rm = TRUE),
+               as.numeric(auc(roc_original_cv))),
+  Enhanced = c(mean(cv_res$AUC_Enhanced, na.rm = TRUE),
+               as.numeric(auc(roc_enhanced_cv)))
+)
+
+class_tbl <- kaggle_metrics_mean %>%
+  transmute(
+    Category = "Classification (Youden-optimal; mean across CV)",
+    Metric   = as.character(Metric),
+    Original = Original,
+    Enhanced = Enhanced
+  )
+
+cal_tbl <- tibble(
+  Category = "Calibration (pooled out-of-fold)",
+  Metric   = "Brier score (pooled out-of-fold)",
+  Original = brier_orig,
+  Enhanced = brier_enh
+)
+
+summary_tbl <- bind_rows(fit_tbl, disc_tbl, class_tbl, cal_tbl) %>%
+  mutate(
+    Difference = Enhanced - Original
+  ) %>%
+  mutate(across(c(Original, Enhanced, Difference), ~ round(.x, 4)))
+
+idx_fit  <- which(summary_tbl$Category == "Model fit (penalized likelihood)")
+idx_disc <- which(summary_tbl$Category == "Discrimination")
+idx_cls  <- which(summary_tbl$Category == "Classification (Youden-optimal; mean across CV)")
+idx_cal  <- which(summary_tbl$Category == "Calibration (pooled out-of-fold)")
+
+summary_tbl %>%
+  select(Metric, Original, Enhanced, Difference, Category) %>%
+  kbl(
+    caption = "Summary Comparison: Original vs Enhanced Geneva (Firth)",
+    col.names = c("Metric", "Original", "Enhanced", "Difference (Enhanced − Original)", "Category"),
+    align = "lcccl",
+    format = "html",
+    escape = FALSE
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+    full_width = FALSE,
+    position = "center"
+  ) %>%
+  row_spec(0, bold = TRUE) %>%
+  pack_rows("Model fit (penalized likelihood)",
+            min(idx_fit), max(idx_fit), bold = TRUE, background = "#f2f2f2") %>%
+  pack_rows("Discrimination",
+            min(idx_disc), max(idx_disc), bold = TRUE, background = "#f9f9f9") %>%
+  pack_rows("Classification (Youden-optimal; mean across CV)",
+            min(idx_cls), max(idx_cls), bold = TRUE, background = "#f2f2f2") %>%
+  pack_rows("Calibration (pooled out-of-fold)",
+            min(idx_cal), max(idx_cal), bold = TRUE, background = "#f9f9f9")
+
+```
+
+
 
